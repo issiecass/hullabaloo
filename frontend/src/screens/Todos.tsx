@@ -20,7 +20,7 @@ export default function Todos({ todos = sampleTodos, onAdd, onToggle, onDelete, 
     <div className="tab-scroll">
       <div className="greeting"><p>THE LIST</p><h1>Things future you<br/>will thank you for.</h1></div>
       <form className="todo-add" onSubmit={handleSubmit}>
-        <input aria-label="New task" placeholder="Add a task" value={text} onChange={e => setText(e.target.value)}/>
+        <input aria-label="New task" placeholder="Add a task" maxLength={200} value={text} onChange={e => setText(e.target.value)}/>
         <button className="todo-add-btn" aria-label="Add task">+</button>
       </form>
       {todos.length === 0

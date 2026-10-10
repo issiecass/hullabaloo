@@ -1,3 +1,5 @@
+import type { Todo } from "./data";
+
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 const TOKEN_KEY = "touchgrass.token";
@@ -48,4 +50,27 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
     throw new ApiError(res.status, typeof detail === "string" ? detail : `${res.status} ${res.statusText}`);
   }
   return res.status === 204 ? (undefined as T) : res.json();
+}
+
+// A to-do as the backend returns it.
+type ApiTodo = { id: number; text: string; note: string | null; due_date: string | null; done: boolean; created_at: string; overdue: boolean };
+
+function toTodo(todo: ApiTodo): Todo {
+  return { id: String(todo.id), text: todo.text, note: todo.note ?? undefined, overdue: todo.overdue, done: todo.done };
+}
+
+export function fetchTodos(): Promise<Todo[]> {
+  return api<ApiTodo[]>("/todos").then(list => list.map(toTodo));
+}
+
+export function createTodo(text: string): Promise<Todo> {
+  return api<ApiTodo>("/todos", { method: "POST", body: JSON.stringify({ text }) }).then(toTodo);
+}
+
+export function updateTodo(id: string, changes: { text?: string; note?: string | null; done?: boolean }): Promise<Todo> {
+  return api<ApiTodo>(`/todos/${id}`, { method: "PATCH", body: JSON.stringify(changes) }).then(toTodo);
+}
+
+export function deleteTodo(id: string): Promise<void> {
+  return api<void>(`/todos/${id}`, { method: "DELETE" });
 }
