@@ -1,11 +1,24 @@
-import type { Todo } from "./data";
+import type { Answers, FilterId, Todo } from "./data";
+import type { Picks } from "./onboarding";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 const TOKEN_KEY = "touchgrass.token";
 
 // The account as the backend returns it from sign-up, log-in and /auth/me.
-export type ApiUser = { id: number; name: string; email: string; spice_level: number; chirps_paused_until: string | null; shortcut_key?: string };
+export type ApiUser = {
+  id: number;
+  name: string;
+  email: string;
+  spice_level: number;
+  interests: string[];
+  filters: FilterId[];
+  // The onboarding answers, with the card picks saved alongside them (see savePreferences).
+  answers: Partial<Answers> & { picks?: Picks };
+  onboarded: boolean;
+  chirps_paused_until: string | null;
+  shortcut_key?: string;
+};
 
 // localStorage can throw (private windows, blocked storage), so every access is guarded.
 export function getToken(): string | null {
@@ -50,6 +63,17 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
     throw new ApiError(res.status, typeof detail === "string" ? detail : `${res.status} ${res.statusText}`);
   }
   return res.status === 204 ? (undefined as T) : res.json();
+}
+
+// The card picks have no column of their own, so they are saved inside the answers.
+export function savePreferences(prefs: { interests?: string[]; spice?: number; filters?: FilterId[]; answers?: Answers; picks?: Picks }): Promise<ApiUser> {
+  const body = {
+    interests: prefs.interests,
+    spice_level: prefs.spice,
+    filters: prefs.filters,
+    answers: prefs.answers || prefs.picks ? { ...prefs.answers, picks: prefs.picks ?? {} } : undefined,
+  };
+  return api<ApiUser>("/auth/me", { method: "PATCH", body: JSON.stringify(body) });
 }
 
 // A to-do as the backend returns it.

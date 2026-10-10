@@ -45,27 +45,12 @@ pnpm dev
 
 The app opens at http://localhost:8443.
 
-## AI activity ideas
+## AI chirps and ideas
 
-The ideas screen asks an LLM for three activities, using the user's interests, onboarding answers, to-dos, filters, and whatever they type into the request box. If the model can't be reached, the app falls back to a built-in list, so it always works.
+Spike's chirps, snooze comments and onboarding reactions, and the activity ideas, are written by Gemini. The frontend sends each request to the backend's `/llm/chat`, and the backend calls Gemini with the API key, so the key never reaches the browser. If the model can't be reached or returns something unusable, the app falls back to its written lines and built-in idea list.
 
-By default it talks to [Ollama](https://ollama.com) on the same machine, which is free and needs no key:
+To set it up, create a key at https://aistudio.google.com/apikey and add these to `backend/.env`:
 
-```bash
-ollama pull llama3.2
-```
-
-Ollama then serves the model at `http://localhost:11434` whenever it is running.
-
-To use a different model or a hosted provider, create `frontend/.env` (it is gitignored) and restart `pnpm dev`:
-
-```
-VITE_LLM_BASE_URL=http://localhost:11434/v1
-VITE_LLM_MODEL=llama3.2
-VITE_LLM_API_KEY=
-```
-
-A key placed in `.env` ends up in the browser bundle where anyone can read it. That is fine for a local demo, but a hosted key should sit behind a backend.
 
 ## Design
 

@@ -4,7 +4,9 @@ import os, random
 from datetime import date, datetime, timedelta
 from typing import Annotated
 from zoneinfo import ZoneInfo
+import httpx
 import psycopg
+from psycopg.types.json import Jsonb
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, StringConstraints
@@ -13,7 +15,8 @@ import uuid
 from typing import Literal
 from fastapi.responses import PlainTextResponse
 
-USER_COLUMNS = "id, name, email, spice_level, interests, filters, answers, chirps_paused_until, created_at, shortcut_key"
+# Only finishing onboarding writes answers, so an empty answers means the user hasn't onboarded yet.
+USER_COLUMNS = "id, name, email, spice_level, interests, filters, answers, answers <> '{}'::jsonb AS onboarded, chirps_paused_until, created_at, shortcut_key"
 
 TZ = ZoneInfo("America/New_York")
 
@@ -177,6 +180,36 @@ def me(user_id: int = Depends(auth.current_user_id)):
         raise HTTPException(404, "User not found")
     return user
 
+Interest = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+
+class Preferences(BaseModel):
+    interests: list[Interest] | None = Field(default=None, max_length=50)
+    spice_level: int | None = Field(default=None, ge=1, le=4)
+    filters: list[Literal["free", "nearby", "hour"]] | None = None
+    answers: dict | None = None
+
+@app.patch("/auth/me")
+def update_me(body: Preferences, user_id: int = Depends(auth.current_user_id)):
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(400, "Nothing to update")
+    if any(value is None for value in changes.values()):
+        raise HTTPException(400, "Preferences can't be cleared")
+    if "filters" in changes:
+        changes["filters"] = list(dict.fromkeys(changes["filters"]))
+    if "answers" in changes:
+        changes["answers"] = Jsonb(changes["answers"])
+    # Keys come from Preferences' fields, never from the raw request, so they're safe to put in the SQL.
+    assignments = ", ".join(f"{field} = %s" for field in changes)
+    with db.connect() as conn:
+        user = conn.execute(
+            f"UPDATE users SET {assignments} WHERE id = %s RETURNING {USER_COLUMNS}",
+            (*changes.values(), user_id),
+        ).fetchone()
+    if not user:
+        raise HTTPException(404, "User not found")
+    return user
+
 TODO_COLUMNS = "id, text, note, due_date, done, created_at, COALESCE(NOT done AND due_date < current_date, false) AS overdue"
 NULLABLE_TODO_FIELDS = {"note", "due_date"}
 
@@ -237,3 +270,33 @@ def delete_todo(todo_id: int, user_id: int = Depends(auth.current_user_id)):
     if not deleted:
         raise HTTPException(404, "Todo not found")
     return Response(status_code=204)
+
+# Gemini, through its OpenAI-compatible endpoint. The key stays on the server; the frontend only ever talks to /llm/chat.
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+
+class LlmChat(BaseModel):
+    system: str = Field(min_length=1, max_length=6000)
+    user: str = Field(min_length=1, max_length=6000)
+
+@app.post("/llm/chat")
+def llm_chat(body: LlmChat, user_id: int = Depends(auth.current_user_id)):
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        raise HTTPException(503, "The LLM is not configured")
+    try:
+        res = httpx.post(
+            GEMINI_URL,
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "model": os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+                "temperature": 0.9,
+                "response_format": {"type": "json_object"},
+                "messages": [{"role": "system", "content": body.system}, {"role": "user", "content": body.user}],
+            },
+            timeout=20,
+        )
+        res.raise_for_status()
+        return {"content": res.json()["choices"][0]["message"]["content"]}
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+        # The frontend falls back to its written lines on any failure, so one generic error is enough.
+        raise HTTPException(502, "The LLM request failed")

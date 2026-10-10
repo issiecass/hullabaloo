@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import Button from "../components/Button";
 import TabBar, { type Tab } from "../components/TabBar";
 import TaskRow from "../components/TaskRow";
 import TopBar from "../components/TopBar";
@@ -29,6 +30,7 @@ export default function Todos({ todos = sampleTodos, onAdd, onToggle, onDelete, 
             <TaskRow text={t.text} note={t.note} overdue={t.overdue} done={t.done} onToggle={onToggle && (() => onToggle(t.id))}/>
             <button className="task-delete" aria-label={`Delete ${t.text}`} onClick={() => onDelete?.(t.id)}>×</button>
           </div>)}</div>}
+      <div className="todo-home"><Button variant="secondary" icon="home" onClick={() => onNavigate?.("home")}>Back to home</Button></div>
     </div>
     <TabBar active="todos" onNavigate={onNavigate}/>
   </main>;

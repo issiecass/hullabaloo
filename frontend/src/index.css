@@ -306,3 +306,6 @@ input[type="range"] { width: 100%; height: 5px; margin-top: 14px; accent-color: 
 .form-error { margin: 0; font-size: 13px; font-weight: 700; color: var(--orange); }
 .settings-note { margin: 0; font-size: 12px; line-height: 1.4; color: var(--green-70); }
 .shortcut-url { padding: 12px 14px; border: 1px solid var(--green-25); border-radius: 14px; background: var(--green-06); font-family: "DM Mono", monospace; font-size: 11px; word-break: break-all; user-select: all; }
+
+.todo-home { margin-top: 24px; }
+.ob-exit { display: block; margin: -4px 0 0 auto; min-height: 36px; padding: 0 4px; border: 0; background: transparent; font-size: 13px; font-weight: 700; color: var(--green); text-decoration: underline; cursor: pointer; }
