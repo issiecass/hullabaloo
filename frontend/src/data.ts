@@ -12,6 +12,13 @@ export type Answers = { meaningTo: string; freeHour: string[]; people: string; a
 
 export const freeHourOptions = ["Moving my body", "Making something", "Seeing people", "Learning something", "Being outside", "Proper rest"];
 
+export const spiceLevels = [
+  { name: "Mild", blurb: "A friendly nudge" },
+  { name: "Playful", blurb: "Light teasing" },
+  { name: "Sassy", blurb: "Dry sarcasm" },
+  { name: "Extra spiky", blurb: "A full roast" },
+];
+
 export type FilterId = "free" | "nearby" | "hour";
 
 export const filterOptions: { id: FilterId; label: string; longLabel: string }[] = [

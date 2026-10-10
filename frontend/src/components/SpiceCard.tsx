@@ -1,7 +1,17 @@
+import { spiceLevels } from "../data";
+
+export function Peppers({ level }: { level: number }) {
+  return <span className="spice-peppers" aria-hidden="true">{[1, 2, 3, 4].map(n => <i key={n} className={n <= level ? "hot" : ""}/>)}</span>;
+}
+
 export default function SpiceCard({ spice, onChange }: { spice: number; onChange?: (spice: number) => void }) {
-  return <div className="spice-card">
-    <div className="row-between"><div><strong>Burn Spice Level</strong><small>{["Mild", "Playful", "Sassy", "Extra spicy"][spice - 1]}</small></div><div className="peppers" aria-label={`${spice} out of 4 peppers`}>{[1,2,3,4].map(n => <span className={n <= spice ? "hot" : ""} key={n}>●</span>)}</div></div>
-    <input aria-label="Chirp spice" type="range" min="1" max="4" value={spice} onChange={e => onChange?.(Number(e.target.value))}/>
-    <div className="slider-labels"><span>nice-ish</span><span>no mercy*</span></div>
+  return <div className="spice-card spice-picker">
+    <span className="spice-eyebrow">BURN SPICE LEVEL</span>
+    <div className="spice-options" role="radiogroup" aria-label="Burn spice level">
+      {spiceLevels.map((level, i) => <button type="button" key={level.name} role="radio" aria-checked={spice === i + 1} className={`spice-option ${spice === i + 1 ? "selected" : ""}`} onClick={() => onChange?.(i + 1)}>
+        <span><strong>{level.name}</strong><small>{level.blurb}</small></span>
+        <Peppers level={i + 1}/>
+      </button>)}
+    </div>
   </div>;
 }
