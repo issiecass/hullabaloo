@@ -37,7 +37,7 @@ Chirps are always PG. They tease the habit, never the person.
 Requires Node.js 18 or later.
 
 ```bash
-git clone https://github.com/issiecass/hullabaloo.git
+git clone 
 cd hullabaloo
 npm install
 npm run dev
