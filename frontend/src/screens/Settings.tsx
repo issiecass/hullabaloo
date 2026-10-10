@@ -11,10 +11,11 @@ import { spiceLevels, type Todo } from "../data";
 import { generateSnoozeComments } from "../llm";
 
 // With `ai` off (the gallery preview) the snooze comments are the written backups.
-export default function Settings({ ai = false, todos = [], name = "Jordan", email = "jordan@example.com", spice = 2, paused = false, onSpiceChange, onSnooze, onStopToday, onResume, onEditPrefs, onLogout, onNavigate }: { ai?: boolean; todos?: Todo[]; name?: string; email?: string; spice?: number; paused?: boolean; onSpiceChange?: (spice: number) => void; onSnooze?: (minutes: number) => void; onStopToday?: () => void; onResume?: () => void; onEditPrefs?: () => void; onLogout?: () => void; onNavigate?: (tab: Tab) => void }) {
+export default function Settings({ ai = false, todos = [], name = "Jordan", email = "jordan@example.com", spice = 2, paused = false, shortcutUrl, onSpiceChange, onSnooze, onStopToday, onResume, onEditPrefs, onLogout, onNavigate }: { ai?: boolean; todos?: Todo[]; name?: string; email?: string; spice?: number; paused?: boolean; shortcutUrl?: string; onSpiceChange?: (spice: number) => void; onSnooze?: (minutes: number) => void; onStopToday?: () => void; onResume?: () => void; onEditPrefs?: () => void; onLogout?: () => void; onNavigate?: (tab: Tab) => void }) {
   const moods: SpikeMood[] = ["mild", "playful", "sassy", "spicy"];
   const [editingSpice, setEditingSpice] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   // One comment per snooze option, ready before the user picks. Starts as the written backups.
   const [comments, setComments] = useState(() => snoozeOptions.map(option => option.comment));
   // What Spike said about the snooze that is running now.
@@ -78,6 +79,12 @@ export default function Settings({ ai = false, todos = [], name = "Jordan", emai
               <Button variant="secondary" onClick={stopToday}>Stop chirping today</Button>
             </>}
       </div>
+      {shortcutUrl && <div className="settings-group">
+        <span className="settings-label">Shortcut</span>
+        <p className="settings-note">Your Shortcut asks this address whether to interrupt you. It answers “no” while a snooze is running.</p>
+        <div className="shortcut-url">{shortcutUrl}</div>
+        <Button variant="secondary" onClick={() => { navigator.clipboard?.writeText(shortcutUrl).then(() => setCopied(true)).catch(() => {}); }}>{copied ? "Copied" : "Copy link"}</Button>
+      </div>}
       <div className="settings-group">
         <span className="settings-label">Interests</span>
         <Button variant="secondary" onClick={onEditPrefs}>Update my interests</Button>
