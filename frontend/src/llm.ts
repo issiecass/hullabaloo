@@ -1,4 +1,4 @@
-import { fallbackChirps, isCleanChirp } from "./chirps";
+import { fallbackChirps, isCleanChirp, snoozeOptions } from "./chirps";
 import type { Activity, FilterId, Todo } from "./data";
 import type { Profile } from "./storage";
 
@@ -32,6 +32,16 @@ Match the spice level you are given: 1 is a friendly nudge, 2 is light teasing, 
 Tease the habit, never the person: aim at the scrolling, the procrastination and the phone.
 ${CONTENT_RULES}
 Reply with JSON only, in this shape: {"at_20_minutes":"...","at_40_minutes":"...","at_60_minutes":"..."}`;
+
+const SNOOZE_PROMPT = `You are Spike, a sarcastic but kind cactus in an app that nags people off social media. The person is about to snooze your reminders.
+Write 3 short reactions, one for each snooze length: 1 minute, 15 minutes and 30 minutes.
+The longer the snooze, the more attitude: 1 minute is mildly amused, 15 minutes is pointed, and 30 minutes is your most theatrical sarcasm.
+Speak directly to the person as "you". Never use their name and never write about them in the third person.
+Each reaction is one or two sentences and 20 words at most, with no emoji and no hashtags. You may mention one of their unfinished to-dos.
+Match the spice level you are given: 1 is gentle, 4 is the sharpest, still clean.
+Tease the habit of putting things off, never the person.
+${CONTENT_RULES}
+Reply with JSON only, in this shape: {"snooze_1":"...","snooze_15":"...","snooze_30":"..."}`;
 
 async function chat(system: string, user: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
   const controller = new AbortController();
@@ -105,15 +115,15 @@ export async function generateActivities({ profile, filters, todos, request, exc
   return parseActivities(await chat(IDEAS_PROMPT, user, IDEAS_TIMEOUT_MS, signal));
 }
 
+// Small models sometimes put the wrong duration in a slot, which would contradict what is on screen.
+function isCleanLine(text: unknown, minutes: number): text is string {
+  return isCleanChirp(text) && [...text.matchAll(/(\d+)\s*-?\s*min/gi)].every(match => Number(match[1]) === minutes);
+}
+
 // Returns three chirps (20, 40 and 60 minutes). Any line the model gets wrong is replaced by its backup.
 export function parseChirps(content: string, backup: string[]): string[] {
   const parsed = parseJson(content);
-  const ok = (chirp: unknown, tier: number): chirp is string => {
-    if (!isCleanChirp(chirp)) return false;
-    // Small models sometimes put the wrong duration in a slot, which would contradict the on-screen timer.
-    const minutes = [...chirp.matchAll(/(\d+)\s*-?\s*min/gi)].map(match => Number(match[1]));
-    return minutes.every(value => value === TIERS[tier]);
-  };
+  const ok = (chirp: unknown, tier: number): chirp is string => isCleanLine(chirp, TIERS[tier]);
   const chirps = TIERS.map(tier => parsed?.[`at_${tier}_minutes`]);
   if (!chirps.some(ok)) throw new Error("The model returned no usable chirps");
   return backup.map((fallback, tier) => { const chirp = chirps[tier]; return ok(chirp, tier) ? chirp.trim() : fallback; });
@@ -129,4 +139,17 @@ export async function generateChirps({ profile, todos }: { profile: Profile | nu
     !openTodos.length && meaningTo && `Something they keep meaning to get back to: ${meaningTo}`,
   ]);
   return parseChirps(await chat(CHIRPS_PROMPT, user, CHIRPS_TIMEOUT_MS, signal), fallbackChirps(spice, todos));
+}
+
+// Returns one reaction per snooze option. Any line the model gets wrong is replaced by its written backup.
+export async function generateSnoozeComments({ spice = 2, todos }: { spice?: number; todos: Todo[] }, signal?: AbortSignal): Promise<string[]> {
+  const openTodos = todos.filter(t => !t.done).map(t => t.text);
+  const user = lines([
+    `Spice level: ${spice} of 4`,
+    openTodos.length ? `Their unfinished to-dos: ${openTodos.join("; ")}` : "They have no unfinished to-dos.",
+  ]);
+  const parsed = parseJson(await chat(SNOOZE_PROMPT, user, CHIRPS_TIMEOUT_MS, signal));
+  const comments = snoozeOptions.map(option => parsed?.[`snooze_${option.minutes}`]);
+  if (!comments.some((comment, i) => isCleanLine(comment, snoozeOptions[i].minutes))) throw new Error("The model returned no usable snooze comments");
+  return snoozeOptions.map((option, i) => { const comment = comments[i]; return isCleanLine(comment, option.minutes) ? comment.trim() : option.comment; });
 }
