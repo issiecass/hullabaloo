@@ -1,19 +1,62 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { snoozeOptions } from "../chirps";
 import Button from "../components/Button";
 import ChatBubble from "../components/ChatBubble";
+import Icon from "../components/Icon";
 import SpiceCard, { Peppers } from "../components/SpiceCard";
 import type { SpikeMood } from "../components/Spike";
 import TabBar, { type Tab } from "../components/TabBar";
 import TopBar from "../components/TopBar";
-import { spiceLevels } from "../data";
+import { spiceLevels, type Todo } from "../data";
+import { generateSnoozeComments } from "../llm";
 
-export default function Settings({ name = "Jordan", email = "jordan@example.com", spice = 2, paused = false, onSpiceChange, onSnooze, onStopToday, onResume, onEditPrefs, onLogout, onNavigate }: { name?: string; email?: string; spice?: number; paused?: boolean; onSpiceChange?: (spice: number) => void; onSnooze?: () => void; onStopToday?: () => void; onResume?: () => void; onEditPrefs?: () => void; onLogout?: () => void; onNavigate?: (tab: Tab) => void }) {
+// With `ai` off (the gallery preview) the snooze comments are the written backups.
+export default function Settings({ ai = false, todos = [], name = "Jordan", email = "jordan@example.com", spice = 2, paused = false, onSpiceChange, onSnooze, onStopToday, onResume, onEditPrefs, onLogout, onNavigate }: { ai?: boolean; todos?: Todo[]; name?: string; email?: string; spice?: number; paused?: boolean; onSpiceChange?: (spice: number) => void; onSnooze?: (minutes: number) => void; onStopToday?: () => void; onResume?: () => void; onEditPrefs?: () => void; onLogout?: () => void; onNavigate?: (tab: Tab) => void }) {
   const moods: SpikeMood[] = ["mild", "playful", "sassy", "spicy"];
   const [editingSpice, setEditingSpice] = useState(false);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  // One comment per snooze option, ready before the user picks. Starts as the written backups.
+  const [comments, setComments] = useState(() => snoozeOptions.map(option => option.comment));
+  // What Spike said about the snooze that is running now.
+  const [snoozeComment, setSnoozeComment] = useState<string | null>(null);
+  const pending = useRef<AbortController | null>(null);
+
+  // Ask the model for a fresh set in the background, so the next pick gets new wording without a wait.
+  function refreshComments() {
+    if (!ai) return;
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
+    const backups = snoozeOptions.map(option => option.comment);
+    generateSnoozeComments({ spice, todos }, controller.signal).catch(() => backups).then(next => {
+      if (pending.current === controller) setComments(next);
+    });
+  }
+
+  useEffect(() => {
+    refreshComments();
+    return () => pending.current?.abort();
+  }, []);
+
+  function snooze(index: number) {
+    setSnoozeComment(comments[index]);
+    setSnoozeOpen(false);
+    onSnooze?.(snoozeOptions[index].minutes);
+    refreshComments();
+  }
+  function stopToday() {
+    setSnoozeComment(null);
+    onStopToday?.();
+  }
+  function resume() {
+    setSnoozeComment(null);
+    onResume?.();
+  }
+
   return <main className="screen tab-screen">
     <TopBar title="Settings"/>
     <div className="tab-scroll">
-      <div className="settings-chat"><ChatBubble mood={paused ? "asleep" : moods[spice - 1]} compact>{paused ? "Chirps are paused. I’m resting my spines." : "Tell me how hard to go on you."}</ChatBubble></div>
+      <div className="settings-chat"><ChatBubble mood={paused ? "asleep" : moods[spice - 1]} compact>{paused ? snoozeComment ?? "Chirps are paused. I’m resting my spines." : "Tell me how hard to go on you."}</ChatBubble></div>
       {editingSpice
         ? <SpiceCard spice={spice} onChange={level => { onSpiceChange?.(level); setEditingSpice(false); }}/>
         : <div className="spice-card spice-summary">
@@ -26,8 +69,14 @@ export default function Settings({ name = "Jordan", email = "jordan@example.com"
       <div className="settings-group">
         <span className="settings-label">Chirps</span>
         {paused
-          ? <Button onClick={onResume}>Resume chirps</Button>
-          : <><Button variant="secondary" onClick={onSnooze}>Snooze 30 min</Button><Button variant="secondary" onClick={onStopToday}>Stop chirping today</Button></>}
+          ? <Button onClick={resume}>Resume chirps</Button>
+          : <>
+              <div className="dropdown">
+                <button type="button" className={`btn btn-secondary dropdown-toggle ${snoozeOpen ? "open" : ""}`} aria-haspopup="listbox" aria-expanded={snoozeOpen} onClick={() => setSnoozeOpen(!snoozeOpen)}><span>Snooze for…</span><Icon name="chevron" size={18}/></button>
+                {snoozeOpen && <div className="dropdown-menu" role="listbox" aria-label="Snooze length">{snoozeOptions.map((option, i) => <button type="button" role="option" aria-selected={false} className="dropdown-option" key={option.minutes} onClick={() => snooze(i)}>{option.label}</button>)}</div>}
+              </div>
+              <Button variant="secondary" onClick={stopToday}>Stop chirping today</Button>
+            </>}
       </div>
       <div className="settings-group">
         <span className="settings-label">Interests</span>

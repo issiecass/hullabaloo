@@ -40,3 +40,10 @@ export function isCleanChirp(text: unknown): text is string {
   const words = text.trim().split(/\s+/).length;
   return text.trim().length >= 8 && words <= 32 && !BLOCKED.test(text);
 }
+
+// Snooze choices in Settings. The comments are backups for when the AI call fails; longer snoozes get more attitude.
+export const snoozeOptions = [
+  { minutes: 1, label: "1 minute", comment: "One minute. Barely a blink. Fine." },
+  { minutes: 15, label: "15 minutes", comment: "Fifteen minutes? I’ll be right here, watching the clock. Judging quietly." },
+  { minutes: 30, label: "30 minutes", comment: "Thirty whole minutes of peace for your feed. Bold. Truly, take your time." },
+];

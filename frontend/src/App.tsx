@@ -22,7 +22,6 @@ type ScreenName = "login" | "onboarding" | Tab | "feed" | "banner" | "sheet" | "
 
 // Demo pacing: the shortest time the feed shows before the first chirp fires.
 const FEED_TO_CHIRP_MS = 4000;
-const SNOOZE_MS = 30 * 60 * 1000;
 
 export default function App() {
   const [profile, setProfile] = useState<Profile | null>(loadProfile);
@@ -54,6 +53,13 @@ export default function App() {
     };
   }, [screen, paused]);
 
+  useEffect(() => {
+    if (!pausedUntil) return;
+    // Clear the pause when it runs out, so the screens update and chirps resume by themselves.
+    const id = setTimeout(() => setPausedUntil(0), Math.max(0, pausedUntil - Date.now()));
+    return () => clearTimeout(id);
+  }, [pausedUntil]);
+
   // The original all-screens design overview lives at /#gallery.
   if (window.location.hash === "#gallery") return <Gallery/>;
 
@@ -81,9 +87,9 @@ export default function App() {
     onboarding: <Onboarding initial={profile ?? undefined} onDone={prefs => { if (profile) updateProfile({ ...profile, ...prefs }); setScreen("home"); }}/>,
     home: <Home name={profile?.name} todos={todos} onToggleTodo={toggleTodo} onStartSession={() => setScreen("feed")} onNavigate={setScreen}/>,
     todos: <Todos todos={todos} onAdd={text => updateTodos([...todos, { id: String(Date.now()), text, done: false }])} onToggle={toggleTodo} onDelete={id => updateTodos(todos.filter(t => t.id !== id))} onNavigate={setScreen}/>,
-    settings: <Settings name={profile?.name} email={profile?.email} spice={profile?.spice} paused={paused}
+    settings: <Settings ai todos={todos} name={profile?.name} email={profile?.email} spice={profile?.spice} paused={paused}
       onSpiceChange={spice => { if (profile) updateProfile({ ...profile, spice }); }}
-      onSnooze={() => setPausedUntil(Date.now() + SNOOZE_MS)}
+      onSnooze={minutes => setPausedUntil(Date.now() + minutes * 60 * 1000)}
       onStopToday={() => setPausedUntil(new Date().setHours(24, 0, 0, 0))}
       onResume={() => setPausedUntil(0)}
       onEditPrefs={() => setScreen("onboarding")} onLogout={logout} onNavigate={setScreen}/>,
