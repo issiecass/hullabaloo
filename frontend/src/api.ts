@@ -1,5 +1,6 @@
 import type { Answers, FilterId, Todo } from "./data";
 import type { Picks } from "./onboarding";
+import type { Activity, Answers, FilterId, Todo } from "./data";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -97,4 +98,24 @@ export function updateTodo(id: string, changes: { text?: string; note?: string |
 
 export function deleteTodo(id: string): Promise<void> {
   return api<void>(`/todos/${id}`, { method: "DELETE" });
+}
+
+// Saves a started activity for the dopamine receipt. The backend only accepts these three tags.
+const TAGS = ["QUICK WIN", "NOVELTY", "SOCIAL"];
+
+export function completeActivity(activity: Activity, filters: FilterId[]) {
+  const a = activity as any;
+  const tag = String(a.tag ?? "").toUpperCase().replace(/[_-]/g, " ").trim();
+  const minutes = parseInt(String(a.minutes ?? a.time ?? ""), 10);
+  return api("/activities/complete", {
+    method: "POST",
+    body: JSON.stringify({
+      tag: TAGS.includes(tag) ? tag : "QUICK WIN",
+      title: String(a.title ?? "Activity"),
+      minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 15,
+      step: String(a.step ?? a.starter_step ?? a.starterStep ?? "Get started"),
+      free: filters.includes("free"),
+      nearby: filters.includes("nearby"),
+    }),
+  });
 }

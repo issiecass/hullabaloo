@@ -19,6 +19,7 @@ import Reward from "./screens/Reward";
 import Settings from "./screens/Settings";
 import Todos from "./screens/Todos";
 import { clearAll, clearNextChirp, loadNextChirp, loadProfile, saveNextChirp, saveProfile, type Profile } from "./storage";
+import { api, ApiError, API_URL, clearToken, completeActivity, createTodo, deleteTodo, fetchTodos, getToken, savePreferences, setToken, updateTodo, type ApiUser } from "./api";
 
 type ScreenName = "login" | "onboarding" | Tab | "feed" | "banner" | "sheet" | "takeover" | "interrupt" | "activities" | "reward";
 
@@ -241,19 +242,9 @@ export default function App() {
     activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} 
     onStart={(activity, filters) => {
       setChosen(activity);
-      api("/activities/complete", {
-        method: "POST",
-        body: JSON.stringify({
-          tag: activity.tag.toUpperCase(),
-          title: activity.title,
-          minutes: activity.minutes,
-          step: activity.step,
-          free: filters.includes("free"),
-          nearby: filters.includes("nearby"),
-        }),
-    }).catch(() => {});   // never make the user wait on it
-    setScreen("reward");
-}}/>,
+      completeActivity(activity, filters).catch(err => console.error("completeActivity failed:", err));
+      setScreen('reward');
+    }}/>,
     reward: <Reward activity={chosen} tasksDone={todos.filter(t => t.done).length} onDone={() => setScreen("home")}/>,
   };
   const noisy = screen === "feed" || screen === "banner" || screen === "sheet";
