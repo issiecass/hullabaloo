@@ -1,14 +1,14 @@
 from dotenv import load_dotenv
 load_dotenv()
 import os, random
-from datetime import datetime, timezone
-import psycopg
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-import auth, db
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from typing import Annotated
 from zoneinfo import ZoneInfo
+import psycopg
+from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, StringConstraints
+import auth, db
 
 TZ = ZoneInfo("America/New_York")
 
@@ -107,3 +107,64 @@ def me(user_id: int = Depends(auth.current_user_id)):
     if not user:
         raise HTTPException(404, "User not found")
     return user
+
+TODO_COLUMNS = "id, text, note, due_date, done, created_at, COALESCE(NOT done AND due_date < current_date, false) AS overdue"
+NULLABLE_TODO_FIELDS = {"note", "due_date"}
+
+TodoText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+TodoNote = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
+
+class TodoCreate(BaseModel):
+    text: TodoText
+    note: TodoNote | None = None
+    due_date: date | None = None
+
+class TodoUpdate(BaseModel):
+    text: TodoText | None = None
+    note: TodoNote | None = None
+    due_date: date | None = None
+    done: bool | None = None
+
+@app.get("/todos")
+def list_todos(user_id: int = Depends(auth.current_user_id)):
+    with db.connect() as conn:
+        return conn.execute(
+            f"SELECT {TODO_COLUMNS} FROM todos WHERE user_id = %s ORDER BY created_at, id",
+            (user_id,),
+        ).fetchall()
+
+@app.post("/todos", status_code=201)
+def create_todo(body: TodoCreate, user_id: int = Depends(auth.current_user_id)):
+    with db.connect() as conn:
+        return conn.execute(
+            f"INSERT INTO todos (user_id, text, note, due_date) VALUES (%s, %s, %s, %s) RETURNING {TODO_COLUMNS}",
+            (user_id, body.text, body.note or None, body.due_date),
+        ).fetchone()
+
+@app.patch("/todos/{todo_id}")
+def update_todo(todo_id: int, body: TodoUpdate, user_id: int = Depends(auth.current_user_id)):
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(400, "Nothing to update")
+    if any(value is None and field not in NULLABLE_TODO_FIELDS for field, value in changes.items()):
+        raise HTTPException(400, "Only note and due_date can be cleared")
+    if "note" in changes:
+        changes["note"] = changes["note"] or None
+    # Keys come from TodoUpdate's fields, never from the raw request, so they're safe to put in the SQL.
+    assignments = ", ".join(f"{field} = %s" for field in changes)
+    with db.connect() as conn:
+        todo = conn.execute(
+            f"UPDATE todos SET {assignments} WHERE id = %s AND user_id = %s RETURNING {TODO_COLUMNS}",
+            (*changes.values(), todo_id, user_id),
+        ).fetchone()
+    if not todo:
+        raise HTTPException(404, "Todo not found")
+    return todo
+
+@app.delete("/todos/{todo_id}", status_code=204)
+def delete_todo(todo_id: int, user_id: int = Depends(auth.current_user_id)):
+    with db.connect() as conn:
+        deleted = conn.execute("DELETE FROM todos WHERE id = %s AND user_id = %s", (todo_id, user_id)).rowcount
+    if not deleted:
+        raise HTTPException(404, "Todo not found")
+    return Response(status_code=204)
