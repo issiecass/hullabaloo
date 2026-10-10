@@ -2,9 +2,9 @@ import { useState, type FormEvent } from "react";
 import TabBar, { type Tab } from "../components/TabBar";
 import TaskRow from "../components/TaskRow";
 import TopBar from "../components/TopBar";
-import { initialTodos, type Todo } from "../data";
+import { sampleTodos, type Todo } from "../data";
 
-export default function Todos({ todos = initialTodos, onAdd, onToggle, onDelete, onNavigate }: { todos?: Todo[]; onAdd?: (text: string) => void; onToggle?: (id: string) => void; onDelete?: (id: string) => void; onNavigate?: (tab: Tab) => void }) {
+export default function Todos({ todos = sampleTodos, onAdd, onToggle, onDelete, onNavigate }: { todos?: Todo[]; onAdd?: (text: string) => void; onToggle?: (id: string) => void; onDelete?: (id: string) => void; onNavigate?: (tab: Tab) => void }) {
   const [text, setText] = useState("");
 
   function handleSubmit(e: FormEvent) {

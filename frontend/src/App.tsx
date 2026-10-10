@@ -61,7 +61,7 @@ export default function App() {
   // Snoozing jumps straight to the next escalation tier so the demo doesn't have to wait.
   const screens: Record<ScreenName, ReactNode> = {
     login: <Login onSubmit={user => { updateProfile(user); setScreen("onboarding"); }}/>,
-    onboarding: <Onboarding onDone={prefs => { if (profile) updateProfile({ ...profile, ...prefs }); setScreen("home"); }}/>,
+    onboarding: <Onboarding initial={profile ?? undefined} onDone={prefs => { if (profile) updateProfile({ ...profile, ...prefs }); setScreen("home"); }}/>,
     home: <Home name={profile?.name} todos={todos} onToggleTodo={toggleTodo} onStartSession={() => setScreen("feed")} onNavigate={setScreen}/>,
     todos: <Todos todos={todos} onAdd={text => updateTodos([...todos, { id: String(Date.now()), text, done: false }])} onToggle={toggleTodo} onDelete={id => updateTodos(todos.filter(t => t.id !== id))} onNavigate={setScreen}/>,
     settings: <Settings name={profile?.name} email={profile?.email} spice={profile?.spice} paused={paused}
@@ -69,12 +69,12 @@ export default function App() {
       onSnooze={() => setPausedUntil(Date.now() + SNOOZE_MS)}
       onStopToday={() => setPausedUntil(new Date().setHours(24, 0, 0, 0))}
       onResume={() => setPausedUntil(0)}
-      onLogout={logout} onNavigate={setScreen}/>,
+      onEditPrefs={() => setScreen("onboarding")} onLogout={logout} onNavigate={setScreen}/>,
     feed: <FakeFeed onExit={() => setScreen("home")}/>,
     banner: <ChirpBanner onAccept={toActivities} onSnooze={() => setScreen("sheet")}/>,
     sheet: <ChirpSheet onAccept={toActivities} onSnooze={() => setScreen("takeover")}/>,
     takeover: <ChirpTakeover onAccept={toActivities} onSnooze={() => setScreen("home")}/>,
-    activities: <Activities initialFilters={profile?.filters} onStart={activity => { setChosen(activity); setScreen("reward"); }}/>,
+    activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} onStart={activity => { setChosen(activity); setScreen("reward"); }}/>,
     reward: <Reward activity={chosen} tasksDone={todos.filter(t => t.done).length} onDone={() => setScreen("home")}/>,
   };
   const noisy = screen === "feed" || screen === "banner" || screen === "sheet";

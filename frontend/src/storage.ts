@@ -1,6 +1,6 @@
-import { initialTodos, type FilterId, type Todo } from "./data";
+import type { Answers, FilterId, Todo } from "./data";
 
-export type Profile = { name: string; email: string; interests?: string[]; spice?: number; filters?: FilterId[] };
+export type Profile = { name: string; email: string; interests?: string[]; spice?: number; filters?: FilterId[]; answers?: Answers };
 
 const PROFILE_KEY = "touchgrass.profile";
 const TODOS_KEY = "touchgrass.todos";
@@ -30,7 +30,7 @@ export function saveProfile(profile: Profile) {
 }
 
 export function loadTodos(): Todo[] {
-  return read<Todo[]>(TODOS_KEY) ?? initialTodos;
+  return read<Todo[]>(TODOS_KEY) ?? [];
 }
 
 export function saveTodos(todos: Todo[]) {
