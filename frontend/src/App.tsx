@@ -1,16 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, API_URL, clearToken, createTodo, deleteTodo, fetchTodos, getToken, savePreferences, setToken, updateTodo, type ApiUser } from "./api";
-import { chirpBasis, fallbackChirps, fallbackInterruptChirp } from "./chirps";
+import { chirpBasis, fallbackInterruptChirp } from "./chirps";
 import Phone from "./components/Phone";
 import type { Tab } from "./components/TabBar";
 import type { Activity, Todo } from "./data";
 import Gallery from "./Gallery";
-import { generateChirps, generateInterruptChirp } from "./llm";
+import { generateInterruptChirp, generateSendOff } from "./llm";
 import Activities from "./screens/Activities";
-import ChirpBanner from "./screens/ChirpBanner";
-import ChirpSheet from "./screens/ChirpSheet";
-import ChirpTakeover from "./screens/ChirpTakeover";
-import FakeFeed from "./screens/FakeFeed";
 import Home from "./screens/Home";
 import Interrupt from "./screens/Interrupt";
 import Login, { type AuthResult } from "./screens/Login";
@@ -18,12 +14,10 @@ import Onboarding from "./screens/Onboarding";
 import Reward from "./screens/Reward";
 import Settings from "./screens/Settings";
 import Todos from "./screens/Todos";
-import { clearAll, clearNextChirp, loadNextChirp, loadProfile, saveNextChirp, saveProfile, type Profile } from "./storage";
+import { fallbackSendOff } from "./session";
+import { clearAll, clearNextChirp, clearSession, loadNextChirp, loadProfile, loadSession, saveNextChirp, saveProfile, saveSession, type Profile, type ScrollSession } from "./storage";
 
-type ScreenName = "login" | "onboarding" | Tab | "feed" | "banner" | "sheet" | "takeover" | "interrupt" | "activities" | "reward";
-
-// Demo pacing: the shortest time the feed shows before the first chirp fires.
-const FEED_TO_CHIRP_MS = 4000;
+type ScreenName = "login" | "onboarding" | Tab | "interrupt" | "activities" | "reward";
 
 // The chirp for the interrupt page: the one the model prepared earlier if it still fits, otherwise the written one.
 function pickInterruptChirp(profile: Profile | null, todos: Todo[]) {
@@ -50,36 +44,36 @@ export default function App() {
   // Being logged in means having a token from the backend; the saved profile alone is not enough.
   const [profile, setProfile] = useState<Profile | null>(() => getToken() ? loadProfile() : null);
   const [todos, setTodos] = useState<Todo[]>([]);
-  // True when the app was opened on /interrupt (by the Shortcut) and that page hasn't been dealt with yet.
-  const [interruptPending, setInterruptPending] = useState(() => window.location.pathname.replace(/\/$/, "") === "/interrupt");
+  // A scrolling session saved before the page was closed or reloaded.
+  const [savedSession] = useState(loadSession);
+  const [session, setSession] = useState<ScrollSession | null>(() => savedSession && savedSession.endsAt > Date.now() ? savedSession : null);
+  // True when Spike has an interrupt to deliver: the app was opened on /interrupt (by the Shortcut),
+  // or a session's time ran out while the app was closed.
+  const [interruptPending, setInterruptPending] = useState(() => window.location.pathname.replace(/\/$/, "") === "/interrupt" || (!!savedSession && savedSession.endsAt <= Date.now()));
   // The interrupt page needs a logged-in user, so a logged-out visitor goes through login first.
   const [screen, setScreen] = useState<ScreenName>(profile ? (interruptPending ? "interrupt" : "home") : "login");
   const [interruptChirp, setInterruptChirp] = useState(() => pickInterruptChirp(profile, todos));
   const [chosen, setChosen] = useState<Activity>();
-  // The session's three chirps, for 20, 40 and 60 minutes.
-  const [chirps, setChirps] = useState<string[]>(() => fallbackChirps());
   // Chirps stay quiet until this timestamp (set from Settings or the interrupt page).
   const [pausedUntil, setPausedUntil] = useState(0);
   const paused = Date.now() < pausedUntil;
 
   useEffect(() => {
-    if (screen !== "feed" || paused) return;
-    // Write this session's chirps while the feed is showing. The first one fires once they are
-    // ready and the minimum feed time has passed; if the model fails, the backup chirps are used.
-    const controller = new AbortController();
-    let cancelled = false;
-    const backup = fallbackChirps(profile?.spice, todos);
-    const minimumWait = new Promise(resolve => setTimeout(resolve, FEED_TO_CHIRP_MS));
-    Promise.all([generateChirps({ profile, todos }, controller.signal).catch(() => backup), minimumWait]).then(([next]) => {
-      if (cancelled) return;
-      setChirps(next);
-      setScreen("banner");
-    });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [screen, paused]);
+    // A session that ran out while the app was away has been turned into an interrupt above; forget it.
+    if (savedSession && savedSession.endsAt <= Date.now()) clearSession();
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    // When the session's time runs out, Spike interrupts wherever the user is in the app.
+    const id = setTimeout(() => {
+      clearSession();
+      setSession(null);
+      setInterruptChirp(pickInterruptChirp(profile, todos));
+      setScreen(current => current === "login" || current === "onboarding" ? current : "interrupt");
+    }, Math.max(0, session.endsAt - Date.now()));
+    return () => clearTimeout(id);
+  }, [session?.endsAt, profile, todos]);
 
   useEffect(() => {
     // While the user is on Home, have the model write the next "time's up" chirp and save it,
@@ -162,19 +156,26 @@ export default function App() {
   function logout() {
     // Only the login is cleared. Preferences are loaded from the backend again at the next login.
     clearToken();
+    clearSession();
+    setSession(null);
     setProfile(null);
     setPausedUntil(0);
     setScreen("login");
   }
   function syncPause(user: ApiUser) {
     // A snooze saved in the backend still applies after a reload or on another screen.
+    // A running session uses the same backend field, but shows as the countdown on Home, not as a snooze.
     const until = user.chirps_paused_until ? Date.parse(user.chirps_paused_until) : 0;
-    if (until > Date.now()) setPausedUntil(until);
+    const sessionRunning = (loadSession()?.endsAt ?? 0) > Date.now();
+    if (until > Date.now() && !sessionRunning) setPausedUntil(until);
   }
   function handleAuthed({ token, user }: AuthResult) {
     setToken(token);
-    // The chirp prepared on this device is kept only when the same account logs back in.
-    if (loadProfile()?.email.toLowerCase() !== user.email.toLowerCase()) clearAll();
+    // What was saved on this device is kept only when the same account logs back in.
+    if (loadProfile()?.email.toLowerCase() !== user.email.toLowerCase()) {
+      clearAll();
+      setSession(null);
+    }
     const next = profileFromUser(user);
     updateProfile(next);
     syncPause(user);
@@ -186,6 +187,27 @@ export default function App() {
     setPausedUntil(Date.now() + minutes * 60 * 1000);
     // Saving it in the backend is what lets the Shortcut skip the interrupt while the snooze runs.
     if (profile?.shortcutKey) api("/snooze", { method: "POST", body: JSON.stringify({ key: profile.shortcutKey, minutes }) }).catch(() => {});
+  }
+  function startSession(seconds: number) {
+    const next: ScrollSession = { endsAt: Date.now() + seconds * 1000, line: fallbackSendOff(seconds) };
+    saveSession(next);
+    setSession(next);
+    // Telling the backend is what lets the Shortcut hold off while the session runs.
+    api("/session", { method: "POST", body: JSON.stringify({ seconds }) }).catch(() => {});
+    // Spike's send-off replaces the written line when the model answers.
+    generateSendOff({ profile, todos, seconds }).then(line => {
+      setSession(current => {
+        if (!current || current.endsAt !== next.endsAt) return current;
+        const updated = { ...current, line };
+        saveSession(updated);
+        return updated;
+      });
+    }).catch(() => {});
+  }
+  function endSession() {
+    clearSession();
+    setSession(null);
+    api("/session", { method: "POST", body: JSON.stringify({ seconds: 0 }) }).catch(() => {});
   }
   function showInterrupt(forProfile: Profile | null) {
     setInterruptChirp(pickInterruptChirp(forProfile, todos));
@@ -207,13 +229,11 @@ export default function App() {
     else setScreen("home");
   }
 
-  const toActivities = () => setScreen("activities");
-  // Snoozing jumps straight to the next escalation tier so the demo doesn't have to wait.
   const screens: Record<ScreenName, ReactNode> = {
     login: <Login onAuthed={handleAuthed}/>,
     onboarding: <Onboarding ai initial={profile ?? undefined} onDone={prefs => finishOnboarding(profile ? { ...profile, ...prefs } : null)}
       onExit={profile?.spice !== undefined ? () => setScreen("settings") : undefined}/>,
-    home: <Home name={profile?.name} todos={todos} onToggleTodo={toggleTodo} onStartSession={() => setScreen("feed")} onNavigate={setScreen}/>,
+    home: <Home name={profile?.name} todos={todos} session={session} onToggleTodo={toggleTodo} onStartSession={startSession} onEndSession={endSession} onNavigate={setScreen}/>,
     todos: <Todos todos={todos} onAdd={addTodo} onToggle={toggleTodo} onDelete={removeTodo} onNavigate={setScreen}/>,
     settings: <Settings ai todos={todos} name={profile?.name} email={profile?.email} spice={profile?.spice} paused={paused}
       shortcutUrl={profile?.shortcutKey ? `${API_URL}/should-interrupt?key=${profile.shortcutKey}` : undefined}
@@ -226,10 +246,6 @@ export default function App() {
       onStopToday={() => setPausedUntil(new Date().setHours(24, 0, 0, 0))}
       onResume={() => setPausedUntil(0)}
       onEditPrefs={() => setScreen("onboarding")} onLogout={logout} onNavigate={setScreen}/>,
-    feed: <FakeFeed onExit={() => setScreen("home")}/>,
-    banner: <ChirpBanner chirp={chirps[0]} onAccept={toActivities} onSnooze={() => setScreen("sheet")}/>,
-    sheet: <ChirpSheet chirp={chirps[1]} onAccept={toActivities} onSnooze={() => setScreen("takeover")}/>,
-    takeover: <ChirpTakeover chirp={chirps[2]} onAccept={toActivities} onSnooze={() => setScreen("home")}/>,
     interrupt: <Interrupt ai chirp={interruptChirp} spice={profile?.spice} todos={todos}
       onAccept={() => {
         // Record the check-in without making the user wait on it.
@@ -256,7 +272,6 @@ export default function App() {
 }}/>,
     reward: <Reward activity={chosen} tasksDone={todos.filter(t => t.done).length} onDone={() => setScreen("home")}/>,
   };
-  const noisy = screen === "feed" || screen === "banner" || screen === "sheet";
 
-  return <div className="app-shell single"><Phone noisy={noisy}>{screens[screen]}</Phone></div>;
+  return <div className="app-shell single"><Phone>{screens[screen]}</Phone></div>;
 }
