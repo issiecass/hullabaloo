@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api, ApiError, API_URL, clearToken, createTodo, deleteTodo, fetchTodos, getToken, setToken, updateTodo, type ApiUser } from "./api";
+import { api, ApiError, API_URL, clearToken, createTodo, deleteTodo, fetchTodos, getToken, savePreferences, setToken, updateTodo, type ApiUser } from "./api";
 import { chirpBasis, fallbackChirps, fallbackInterruptChirp } from "./chirps";
 import Phone from "./components/Phone";
 import type { Tab } from "./components/TabBar";
@@ -29,6 +29,21 @@ const FEED_TO_CHIRP_MS = 4000;
 function pickInterruptChirp(profile: Profile | null, todos: Todo[]) {
   const prepared = loadNextChirp();
   return prepared && prepared.basis === chirpBasis(profile?.spice, todos) ? prepared.chirp : fallbackInterruptChirp(profile?.spice, todos);
+}
+
+// The profile as the backend has it. Preferences are left out until onboarding is done, which is what sends the user there.
+function profileFromUser(user: ApiUser): Profile {
+  const account = { name: user.name, email: user.email, shortcutKey: user.shortcut_key };
+  if (!user.onboarded) return account;
+  const { picks = {}, ...answers } = user.answers;
+  return {
+    ...account,
+    interests: user.interests,
+    spice: user.spice_level,
+    filters: user.filters,
+    picks,
+    answers: { meaningTo: "", freeHour: [], people: "", avoid: "", ...answers },
+  };
 }
 
 export default function App() {
@@ -85,15 +100,16 @@ export default function App() {
   }, [pausedUntil]);
 
   useEffect(() => {
-    // Confirm the saved login with the backend and pick up what it knows that the device doesn't.
+    // Confirm the saved login with the backend. Its copy of the profile replaces the one saved on the device.
     if (!getToken()) return;
     api<ApiUser>("/auth/me").then(user => {
       setProfile(current => {
         if (!current) return current;
-        const next = { ...current, name: user.name, email: user.email, shortcutKey: user.shortcut_key ?? current.shortcutKey };
+        const next = profileFromUser(user);
         saveProfile(next);
         return next;
       });
+      if (!user.onboarded) setScreen(current => current === "login" ? current : "onboarding");
       syncPause(user);
     }).catch(error => {
       // An expired or unknown login goes back to the login screen. If the backend is only unreachable, carry on with the saved data.
@@ -144,7 +160,7 @@ export default function App() {
     deleteTodo(id).catch(reloadTodos);
   }
   function logout() {
-    // Only the login is cleared. Preferences stay on the device for when this account logs back in.
+    // Only the login is cleared. Preferences are loaded from the backend again at the next login.
     clearToken();
     setProfile(null);
     setPausedUntil(0);
@@ -157,14 +173,12 @@ export default function App() {
   }
   function handleAuthed({ token, user }: AuthResult) {
     setToken(token);
-    // Preferences live on the device for now, so they are kept only when the same account logs back in.
-    const stored = loadProfile();
-    const kept = stored && stored.email.toLowerCase() === user.email.toLowerCase() ? stored : null;
-    if (!kept) clearAll();
-    const next: Profile = { ...kept, name: user.name, email: user.email, shortcutKey: user.shortcut_key ?? kept?.shortcutKey };
+    // The chirp prepared on this device is kept only when the same account logs back in.
+    if (loadProfile()?.email.toLowerCase() !== user.email.toLowerCase()) clearAll();
+    const next = profileFromUser(user);
     updateProfile(next);
     syncPause(user);
-    if (next.spice === undefined) setScreen("onboarding");
+    if (!user.onboarded) setScreen("onboarding");
     else if (interruptPending) showInterrupt(next);
     else setScreen("home");
   }
@@ -185,7 +199,10 @@ export default function App() {
     setScreen(next);
   }
   function finishOnboarding(next: Profile | null) {
-    if (next) updateProfile(next);
+    if (next) {
+      updateProfile(next);
+      savePreferences(next).catch(() => {});
+    }
     if (interruptPending) showInterrupt(next);
     else setScreen("home");
   }
@@ -200,7 +217,11 @@ export default function App() {
     todos: <Todos todos={todos} onAdd={addTodo} onToggle={toggleTodo} onDelete={removeTodo} onNavigate={setScreen}/>,
     settings: <Settings ai todos={todos} name={profile?.name} email={profile?.email} spice={profile?.spice} paused={paused}
       shortcutUrl={profile?.shortcutKey ? `${API_URL}/should-interrupt?key=${profile.shortcutKey}` : undefined}
-      onSpiceChange={spice => { if (profile) updateProfile({ ...profile, spice }); }}
+      onSpiceChange={spice => {
+        if (!profile) return;
+        updateProfile({ ...profile, spice });
+        savePreferences({ spice }).catch(() => {});
+      }}
       onSnooze={snoozeFor}
       onStopToday={() => setPausedUntil(new Date().setHours(24, 0, 0, 0))}
       onResume={() => setPausedUntil(0)}

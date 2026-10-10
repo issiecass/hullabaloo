@@ -6,6 +6,7 @@ from typing import Annotated
 from zoneinfo import ZoneInfo
 import httpx
 import psycopg
+from psycopg.types.json import Jsonb
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, StringConstraints
@@ -14,7 +15,8 @@ import uuid
 from typing import Literal
 from fastapi.responses import PlainTextResponse
 
-USER_COLUMNS = "id, name, email, spice_level, interests, filters, answers, chirps_paused_until, created_at, shortcut_key"
+# Only finishing onboarding writes answers, so an empty answers means the user hasn't onboarded yet.
+USER_COLUMNS = "id, name, email, spice_level, interests, filters, answers, answers <> '{}'::jsonb AS onboarded, chirps_paused_until, created_at, shortcut_key"
 
 TZ = ZoneInfo("America/New_York")
 
@@ -146,6 +148,36 @@ def login(body: Login):
 def me(user_id: int = Depends(auth.current_user_id)):
     with db.connect() as conn:
         user = conn.execute(f"SELECT {USER_COLUMNS} FROM users WHERE id = %s", (user_id,)).fetchone()
+    if not user:
+        raise HTTPException(404, "User not found")
+    return user
+
+Interest = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+
+class Preferences(BaseModel):
+    interests: list[Interest] | None = Field(default=None, max_length=50)
+    spice_level: int | None = Field(default=None, ge=1, le=4)
+    filters: list[Literal["free", "nearby", "hour"]] | None = None
+    answers: dict | None = None
+
+@app.patch("/auth/me")
+def update_me(body: Preferences, user_id: int = Depends(auth.current_user_id)):
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(400, "Nothing to update")
+    if any(value is None for value in changes.values()):
+        raise HTTPException(400, "Preferences can't be cleared")
+    if "filters" in changes:
+        changes["filters"] = list(dict.fromkeys(changes["filters"]))
+    if "answers" in changes:
+        changes["answers"] = Jsonb(changes["answers"])
+    # Keys come from Preferences' fields, never from the raw request, so they're safe to put in the SQL.
+    assignments = ", ".join(f"{field} = %s" for field in changes)
+    with db.connect() as conn:
+        user = conn.execute(
+            f"UPDATE users SET {assignments} WHERE id = %s RETURNING {USER_COLUMNS}",
+            (*changes.values(), user_id),
+        ).fetchone()
     if not user:
         raise HTTPException(404, "User not found")
     return user
