@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Phone from "./components/Phone";
+import { fallbackChirps } from "./chirps";
 import type { Tab } from "./components/TabBar";
 import type { Activity, Todo } from "./data";
 import Gallery from "./Gallery";
+import { generateChirps } from "./llm";
 import Activities from "./screens/Activities";
 import ChirpBanner from "./screens/ChirpBanner";
 import ChirpSheet from "./screens/ChirpSheet";
@@ -18,7 +20,7 @@ import { clearAll, loadProfile, loadTodos, saveProfile, saveTodos, type Profile 
 
 type ScreenName = "login" | "onboarding" | Tab | "feed" | "banner" | "sheet" | "takeover" | "activities" | "reward";
 
-// Demo pacing: how long the feed shows before the first chirp fires.
+// Demo pacing: the shortest time the feed shows before the first chirp fires.
 const FEED_TO_CHIRP_MS = 4000;
 const SNOOZE_MS = 30 * 60 * 1000;
 
@@ -27,14 +29,29 @@ export default function App() {
   const [todos, setTodos] = useState<Todo[]>(loadTodos);
   const [screen, setScreen] = useState<ScreenName>(profile ? "home" : "login");
   const [chosen, setChosen] = useState<Activity>();
+  // The session's three chirps, for 20, 40 and 60 minutes.
+  const [chirps, setChirps] = useState<string[]>(() => fallbackChirps());
   // Chirps stay quiet until this timestamp (set from Settings).
   const [pausedUntil, setPausedUntil] = useState(0);
   const paused = Date.now() < pausedUntil;
 
   useEffect(() => {
     if (screen !== "feed" || paused) return;
-    const id = setTimeout(() => setScreen("banner"), FEED_TO_CHIRP_MS);
-    return () => clearTimeout(id);
+    // Write this session's chirps while the feed is showing. The first one fires once they are
+    // ready and the minimum feed time has passed; if the model fails, the backup chirps are used.
+    const controller = new AbortController();
+    let cancelled = false;
+    const backup = fallbackChirps(profile?.spice, todos);
+    const minimumWait = new Promise(resolve => setTimeout(resolve, FEED_TO_CHIRP_MS));
+    Promise.all([generateChirps({ profile, todos }, controller.signal).catch(() => backup), minimumWait]).then(([next]) => {
+      if (cancelled) return;
+      setChirps(next);
+      setScreen("banner");
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [screen, paused]);
 
   // The original all-screens design overview lives at /#gallery.
@@ -71,9 +88,9 @@ export default function App() {
       onResume={() => setPausedUntil(0)}
       onEditPrefs={() => setScreen("onboarding")} onLogout={logout} onNavigate={setScreen}/>,
     feed: <FakeFeed onExit={() => setScreen("home")}/>,
-    banner: <ChirpBanner onAccept={toActivities} onSnooze={() => setScreen("sheet")}/>,
-    sheet: <ChirpSheet onAccept={toActivities} onSnooze={() => setScreen("takeover")}/>,
-    takeover: <ChirpTakeover onAccept={toActivities} onSnooze={() => setScreen("home")}/>,
+    banner: <ChirpBanner chirp={chirps[0]} onAccept={toActivities} onSnooze={() => setScreen("sheet")}/>,
+    sheet: <ChirpSheet chirp={chirps[1]} onAccept={toActivities} onSnooze={() => setScreen("takeover")}/>,
+    takeover: <ChirpTakeover chirp={chirps[2]} onAccept={toActivities} onSnooze={() => setScreen("home")}/>,
     activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} onStart={activity => { setChosen(activity); setScreen("reward"); }}/>,
     reward: <Reward activity={chosen} tasksDone={todos.filter(t => t.done).length} onDone={() => setScreen("home")}/>,
   };
