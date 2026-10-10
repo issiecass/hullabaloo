@@ -2,6 +2,7 @@ import { api } from "./api";
 import { fallbackChirps, isCleanChirp, snoozeOptions } from "./chirps";
 import { spiceLevels, type Activity, type FilterId, type Todo } from "./data";
 import { cards, spiceSamples, type Card } from "./onboarding";
+import { describeDuration } from "./session";
 import type { Profile } from "./storage";
 
 // The model is reached through the backend's /llm/chat, which holds the API key. Nothing here talks to the provider directly.
@@ -200,4 +201,22 @@ export async function generateOnboardingLines(requests: LineRequest[], interests
     if (isCleanChirp(line)) result[key] = line.trim();
   }
   return result;
+}
+
+
+const SEND_OFF_PROMPT = `You are Spike, a sarcastic but kind cactus in an app that nags people off social media. The person has just given themselves a set amount of scrolling time and is about to go and use it.
+Write 1 send-off line for them. React to how long they chose: the longer the session, the more attitude.
+Speak directly to the person as "you". Never use their name and never write about them in the third person.
+The line is one sentence of 16 words at most, with no emoji, no hashtags and no questions. You may mention one of their unfinished to-dos.
+Match the spice level you are given: 1 is gentle, 4 is the sharpest, still clean.
+Tease the habit, never the person.
+${CONTENT_RULES}
+Reply with JSON only, in this shape: {"line":"..."}`;
+
+// Spike's parting line when a scrolling session starts. Throws if the model's line isn't usable, so the caller keeps the written one.
+export async function generateSendOff({ profile, todos, seconds }: { profile: Profile | null; todos: Todo[]; seconds: number }, signal?: AbortSignal): Promise<string> {
+  const user = lines([`They chose to scroll for: ${describeDuration(seconds)}`, describeForChirp(profile, todos)]);
+  const line = parseJson(await chat(SEND_OFF_PROMPT, user, CHIRPS_TIMEOUT_MS, signal))?.line;
+  if (!isCleanChirp(line)) throw new Error("The model returned no usable line");
+  return line.trim();
 }

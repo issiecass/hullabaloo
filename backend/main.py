@@ -272,3 +272,21 @@ def llm_chat(body: LlmChat, user_id: int = Depends(auth.current_user_id)):
     except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
         # The frontend falls back to its written lines on any failure, so one generic error is enough.
         raise HTTPException(502, "The LLM request failed")
+
+        
+# A scrolling session the user allows themselves from the Home screen.
+# While it runs, /should-interrupt answers "no", so the Shortcut lets them through.
+class Session(BaseModel):
+    seconds: int = Field(ge=0, le=7200)   # 0 ends the session now; the cap is two hours
+
+@app.post("/session")
+def start_session(body: Session, user_id: int = Depends(auth.current_user_id)):
+    with db.connect() as conn:
+        row = conn.execute(
+            "UPDATE users SET chirps_paused_until = now() + make_interval(secs => %s) "
+            "WHERE id = %s RETURNING chirps_paused_until",
+            (body.seconds, user_id),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "User not found")
+    return row
