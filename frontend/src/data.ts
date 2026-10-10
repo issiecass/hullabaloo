@@ -1,11 +1,16 @@
 export type Todo = { id: string; text: string; note?: string; overdue?: boolean; done: boolean };
 
-export const initialTodos: Todo[] = [
+// Example tasks for the gallery preview only. Real users start with an empty list.
+export const sampleTodos: Todo[] = [
   { id: "dentist", text: "Schedule dentist appointment", note: "3 weeks overdue", overdue: true, done: false },
   { id: "read", text: "Read 20 pages", done: false },
   { id: "mom", text: "Call mom", done: false },
   { id: "stats", text: "Finish stats assignment", done: false },
 ];
+
+export type Answers = { meaningTo: string; freeHour: string[]; people: string; avoid: string };
+
+export const freeHourOptions = ["Moving my body", "Making something", "Seeing people", "Learning something", "Being outside", "Proper rest"];
 
 export type FilterId = "free" | "nearby" | "hour";
 
@@ -19,7 +24,7 @@ export const defaultFilters: FilterId[] = ["free", "nearby", "hour"];
 
 export type Activity = { tag: "QUICK WIN" | "NOVELTY" | "SOCIAL"; title: string; minutes: number; step: string; free: boolean; nearby: boolean };
 
-// Stand-in for the AI activity call: a fixed pool that the filters and reroll draw from.
+// Backup ideas for when the AI call fails or is switched off.
 export const activityPool: Activity[] = [
   { tag: "QUICK WIN", title: "Make the pasta you’ve been watching", minutes: 35, step: "Put a pot of water on the stove. That’s it. Momentum unlocked.", free: true, nearby: true },
   { tag: "NOVELTY", title: "Walk to a street you’ve never taken", minutes: 25, step: "Shoes on. Pick the first left you normally ignore.", free: true, nearby: true },

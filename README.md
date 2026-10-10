@@ -30,24 +30,42 @@ Chirps are always PG. They tease the habit, never the person.
 - React + Vite
 - Tailwind CSS
 - Framer Motion
-- LLM API: [provider to be confirmed]
+- LLM: any OpenAI-compatible chat endpoint. Defaults to an open-source model served locally by Ollama.
 
 ## Getting started
 
-Requires Node.js 18 or later.
+Requires Node.js 18 or later and pnpm (`npm install -g pnpm`).
 
 ```bash
-git clone 
-cd hullabaloo
-npm install
-npm run dev
+git clone https://github.com/issiecass/hullabaloo.git
+cd hullabaloo/frontend
+pnpm install
+pnpm dev
 ```
 
-Create a `.env` file in the project root for the API key. Never commit this file.
+The app opens at http://localhost:8443.
+
+## AI activity ideas
+
+The ideas screen asks an LLM for three activities, using the user's interests, onboarding answers, to-dos, filters, and whatever they type into the request box. If the model can't be reached, the app falls back to a built-in list, so it always works.
+
+By default it talks to [Ollama](https://ollama.com) on the same machine, which is free and needs no key:
+
+```bash
+ollama pull llama3.2
+```
+
+Ollama then serves the model at `http://localhost:11434` whenever it is running.
+
+To use a different model or a hosted provider, create `frontend/.env` (it is gitignored) and restart `pnpm dev`:
 
 ```
-VITE_LLM_API_KEY=your-key-here
+VITE_LLM_BASE_URL=http://localhost:11434/v1
+VITE_LLM_MODEL=llama3.2
+VITE_LLM_API_KEY=
 ```
+
+A key placed in `.env` ends up in the browser bundle where anyone can read it. That is fine for a local demo, but a hosted key should sit behind a backend.
 
 ## Design
 
