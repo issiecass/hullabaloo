@@ -73,6 +73,31 @@ input[type="range"] { width: 100%; height: 5px; margin-top: 14px; accent-color: 
 .slider-labels { display: flex; justify-content: space-between; font-size: 9px; font-weight: 700; color: var(--green-70); margin-top: 2px; }
 .defaults { display: grid; gap: 10px; margin-bottom: 20px; }
 .onboarding > .btn { margin-top: 2px; }
+.login-screen .chat { margin-bottom: 26px; }
+.login-form { display: grid; gap: 14px; }
+.login-form > .btn { margin-top: 8px; }
+.field { display: grid; gap: 6px; }
+.field span { font-size: 13px; font-weight: 800; color: var(--green); }
+/* 16px minimum: iOS Safari zooms the page when a smaller input is focused. */
+.field input, .todo-add input { width: 100%; min-height: 50px; padding: 0 16px; font-size: 16px; color: var(--brown); background: var(--green-06); border: 1.5px solid var(--green-25); border-radius: 14px; outline: none; }
+.field input::placeholder, .todo-add input::placeholder { color: var(--green-45); }
+.field input:focus, .todo-add input:focus { border-color: var(--green); background: var(--paper); }
+.todo-add { display: flex; gap: 8px; margin-bottom: 14px; }
+.todo-add input { flex: 1; min-width: 0; }
+.todo-add-btn { flex: 0 0 50px; height: 50px; border: 0; border-radius: 14px; background: var(--orange); color: white; font-size: 26px; font-weight: 700; line-height: 1; cursor: pointer; }
+.todo-line { display: flex; align-items: center; border-bottom: 1px solid var(--green-25); }
+.todo-line .task-row { flex: 1; min-width: 0; border-bottom: 0; }
+.task-delete { flex: 0 0 44px; height: 44px; border: 0; background: transparent; color: var(--green-70); font-size: 22px; line-height: 1; cursor: pointer; }
+.empty-note { margin: 24px 0; text-align: center; font-size: 14px; font-weight: 600; color: var(--green-70); }
+.settings-chat { margin: 18px 0 0; }
+.settings-group { display: grid; gap: 10px; margin-bottom: 22px; }
+.settings-label { font-size: 15px; font-weight: 800; }
+.account-row { padding: 14px 16px; border: 1px solid var(--green-25); border-radius: 14px; background: var(--green-06); }
+.account-row strong { display: block; font-size: 15px; }
+.account-row small { display: block; margin-top: 2px; font-size: 12px; color: var(--green-70); }
+.feed-exit { border: 2px solid #FF2F92; border-radius: 8px; background: transparent; color: white; padding: 8px 10px; font-size: 12px; font-weight: 800; cursor: pointer; }
+.receipt-row.tall strong { max-width: 62%; }
+.link-btn { display: block; width: 100%; min-height: 44px; margin-top: 10px; border: 0; background: transparent; font-size: 13px; font-weight: 700; color: var(--green); text-decoration: underline; cursor: pointer; }
 .topbar { height: 45px; display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; }
 .brand-mark { width: 35px; height: 35px; display: grid; place-items: center; }
 .brand-mark svg { width: 35px; height: 35px; display: block; }
@@ -101,8 +126,8 @@ input[type="range"] { width: 100%; height: 5px; margin-top: 14px; accent-color: 
 .task-row.done .checkbox { background: var(--green); color: var(--paper); }
 .task-row.done .task-copy { opacity: .45; text-decoration: line-through; }
 .overdue { background: rgba(185,74,51,.14); color: var(--orange); border-radius: 99px; padding: 4px 7px; font-size: 8px; font-weight: 900; }
-.home-screen { display: flex; flex-direction: column; padding-bottom: 0; overflow: hidden; }
-.home-scroll { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -22px; padding: 0 22px 16px; }
+.home-screen, .tab-screen { display: flex; flex-direction: column; padding-bottom: 0; overflow: hidden; }
+.home-scroll, .tab-scroll { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -22px; padding: 0 22px 16px; }
 .home-screen .chat { margin: 11px 0; }
 .home-scroll > .btn { min-height: 48px; }
 .tabbar { flex: 0 0 auto; margin: 0 -22px; height: calc(70px + var(--inset-bottom)); background: var(--green); border-top: 1px solid var(--green); display: grid; grid-template-columns: repeat(3,1fr); padding: 8px 24px calc(9px + var(--inset-bottom)); }
