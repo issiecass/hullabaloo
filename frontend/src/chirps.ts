@@ -32,6 +32,24 @@ export function fallbackChirps(spice = 2, todos: Todo[] = []): string[] {
   return level.map((template, tier) => template(open.length ? open[tier % open.length] : undefined));
 }
 
+// Backup chirps for the interrupt page ("time's up"), one per spice level.
+const interruptTemplates: Template[] = [
+  t => t ? `Time’s up for today. “${t}” is still waiting, whenever you’re ready.` : "Time’s up for today. A little break might feel nice.",
+  t => t ? `That’s your scrolling time gone. “${t}” is starting to feel left out.` : "That’s your scrolling time gone. Your thumb has earned a rest.",
+  t => t ? `Out of scrolling time, and “${t}” remains untouched. Bold strategy.` : "Out of scrolling time. Should we try your own life for a bit?",
+  t => t ? `Time’s up. “${t}” hasn’t moved, but the feed got your full attention. Stunning work.` : "Time’s up. A personal best in doing nothing. Shall we stop?",
+];
+
+export function fallbackInterruptChirp(spice = 2, todos: Todo[] = []): string {
+  const open = todos.filter(t => !t.done).map(t => t.text);
+  return interruptTemplates[Math.min(Math.max(spice, 1), 4) - 1](open[0]);
+}
+
+// Describes what a prepared chirp was written for, so a stale one isn't shown after the tasks or spice level change.
+export function chirpBasis(spice = 2, todos: Todo[] = []): string {
+  return `${spice}|${todos.filter(t => !t.done).map(t => t.text).join("|")}`;
+}
+
 const BLOCKED = /\b(fuck\w*|shit\w*|bitch\w*|ass|asshole|damn|crap|stupid|idiot|dumb|moron|loser|ugly|fat|lazy|pathetic|worthless)\b/i;
 
 // Last line of defence on model output: right length, and nothing profane or aimed at the person.

@@ -34,6 +34,17 @@ Tease the habit, never the person: aim at the scrolling, the procrastination and
 ${CONTENT_RULES}
 Reply with JSON only, in this shape: {"at_20_minutes":"...","at_40_minutes":"...","at_60_minutes":"..."}`;
 
+const INTERRUPT_PROMPT = `You are Spike, a sarcastic but kind cactus who teases people for scrolling social media too long, the way a good friend would.
+The person has just used up their scrolling time for today, and you are interrupting them. Write 1 chirp telling them their time is up.
+Speak directly to the person as "you". Never use their name and never write about them in the third person.
+When they have unfinished to-dos, mention one of them. Only mention to-dos from their list.
+The chirp is short: one or two sentences and 20 words at most, with no emoji and no hashtags. Do not mention a number of minutes or hours.
+Observe and tease rather than giving orders or advice.
+Match the spice level you are given: 1 is a friendly nudge, 2 is light teasing, 3 is dry sarcasm, 4 is a full roast that is still clean.
+Tease the habit, never the person: aim at the scrolling, the procrastination and the phone.
+${CONTENT_RULES}
+Reply with JSON only, in this shape: {"chirp":"..."}`;
+
 const SNOOZE_PROMPT = `You are Spike, a sarcastic but kind cactus in an app that nags people off social media. The person is about to snooze your reminders.
 Write 3 short reactions, one for each snooze length: 1 minute, 15 minutes and 30 minutes.
 The longer the snooze, the more attitude: 1 minute is mildly amused, 15 minutes is pointed, and 30 minutes is your most theatrical sarcasm.
@@ -142,16 +153,27 @@ export function parseChirps(content: string, backup: string[]): string[] {
   return backup.map((fallback, tier) => { const chirp = chirps[tier]; return ok(chirp, tier) ? chirp.trim() : fallback; });
 }
 
-export async function generateChirps({ profile, todos }: { profile: Profile | null; todos: Todo[] }, signal?: AbortSignal): Promise<string[]> {
-  const spice = profile?.spice ?? 2;
+// What the chirp prompts are told about the person: spice level and unfinished to-dos.
+function describeForChirp(profile: Profile | null, todos: Todo[]) {
   const openTodos = todos.filter(t => !t.done).map(t => t.note ? `${t.text} (${t.note})` : t.text);
   const meaningTo = profile?.answers?.meaningTo;
-  const user = lines([
-    `Spice level: ${spice} of 4`,
+  return lines([
+    `Spice level: ${profile?.spice ?? 2} of 4`,
     openTodos.length ? `Their unfinished to-dos: ${openTodos.join("; ")}` : "They have no unfinished to-dos, so tease the scrolling itself.",
     !openTodos.length && meaningTo && `Something they keep meaning to get back to: ${meaningTo}`,
   ]);
-  return parseChirps(await chat(CHIRPS_PROMPT, user, CHIRPS_TIMEOUT_MS, signal), fallbackChirps(spice, todos));
+}
+
+export async function generateChirps({ profile, todos }: { profile: Profile | null; todos: Todo[] }, signal?: AbortSignal): Promise<string[]> {
+  return parseChirps(await chat(CHIRPS_PROMPT, describeForChirp(profile, todos), CHIRPS_TIMEOUT_MS, signal), fallbackChirps(profile?.spice ?? 2, todos));
+}
+
+// The "time's up" chirp for the interrupt page. Throws if the model's line isn't usable, so the caller can keep the written one.
+export async function generateInterruptChirp({ profile, todos }: { profile: Profile | null; todos: Todo[] }, signal?: AbortSignal): Promise<string> {
+  const chirp = parseJson(await chat(INTERRUPT_PROMPT, describeForChirp(profile, todos), CHIRPS_TIMEOUT_MS, signal))?.chirp;
+  // -1 never matches, so a chirp that names any number of minutes is rejected.
+  if (!isCleanLine(chirp, -1)) throw new Error("The model returned no usable chirp");
+  return chirp.trim();
 }
 
 // Returns one reaction per snooze option. Any line the model gets wrong is replaced by its written backup.

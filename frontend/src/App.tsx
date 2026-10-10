@@ -1,36 +1,48 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { api } from "./api";
+import { chirpBasis, fallbackChirps, fallbackInterruptChirp } from "./chirps";
 import Phone from "./components/Phone";
-import { fallbackChirps } from "./chirps";
 import type { Tab } from "./components/TabBar";
 import type { Activity, Todo } from "./data";
 import Gallery from "./Gallery";
-import { generateChirps } from "./llm";
+import { generateChirps, generateInterruptChirp } from "./llm";
 import Activities from "./screens/Activities";
 import ChirpBanner from "./screens/ChirpBanner";
 import ChirpSheet from "./screens/ChirpSheet";
 import ChirpTakeover from "./screens/ChirpTakeover";
 import FakeFeed from "./screens/FakeFeed";
 import Home from "./screens/Home";
+import Interrupt from "./screens/Interrupt";
 import Login from "./screens/Login";
 import Onboarding from "./screens/Onboarding";
 import Reward from "./screens/Reward";
 import Settings from "./screens/Settings";
 import Todos from "./screens/Todos";
-import { clearAll, loadProfile, loadTodos, saveProfile, saveTodos, type Profile } from "./storage";
+import { clearAll, clearNextChirp, loadNextChirp, loadProfile, loadTodos, saveNextChirp, saveProfile, saveTodos, type Profile } from "./storage";
 
-type ScreenName = "login" | "onboarding" | Tab | "feed" | "banner" | "sheet" | "takeover" | "activities" | "reward";
+type ScreenName = "login" | "onboarding" | Tab | "feed" | "banner" | "sheet" | "takeover" | "interrupt" | "activities" | "reward";
 
 // Demo pacing: the shortest time the feed shows before the first chirp fires.
 const FEED_TO_CHIRP_MS = 4000;
 
+// The chirp for the interrupt page: the one the model prepared earlier if it still fits, otherwise the written one.
+function pickInterruptChirp(profile: Profile | null, todos: Todo[]) {
+  const prepared = loadNextChirp();
+  return prepared && prepared.basis === chirpBasis(profile?.spice, todos) ? prepared.chirp : fallbackInterruptChirp(profile?.spice, todos);
+}
+
 export default function App() {
   const [profile, setProfile] = useState<Profile | null>(loadProfile);
   const [todos, setTodos] = useState<Todo[]>(loadTodos);
-  const [screen, setScreen] = useState<ScreenName>(profile ? "home" : "login");
+  // True when the app was opened on /interrupt (by the Shortcut) and that page hasn't been dealt with yet.
+  const [interruptPending, setInterruptPending] = useState(() => window.location.pathname.replace(/\/$/, "") === "/interrupt");
+  // The interrupt page needs a logged-in user, so a logged-out visitor goes through login first.
+  const [screen, setScreen] = useState<ScreenName>(profile ? (interruptPending ? "interrupt" : "home") : "login");
+  const [interruptChirp, setInterruptChirp] = useState(() => pickInterruptChirp(profile, todos));
   const [chosen, setChosen] = useState<Activity>();
   // The session's three chirps, for 20, 40 and 60 minutes.
   const [chirps, setChirps] = useState<string[]>(() => fallbackChirps());
-  // Chirps stay quiet until this timestamp (set from Settings).
+  // Chirps stay quiet until this timestamp (set from Settings or the interrupt page).
   const [pausedUntil, setPausedUntil] = useState(0);
   const paused = Date.now() < pausedUntil;
 
@@ -52,6 +64,17 @@ export default function App() {
       controller.abort();
     };
   }, [screen, paused]);
+
+  useEffect(() => {
+    // While the user is on Home, have the model write the next "time's up" chirp and save it,
+    // so the interrupt page can show it at once instead of waiting for the model.
+    if (!profile || screen !== "home") return;
+    const basis = chirpBasis(profile.spice, todos);
+    if (loadNextChirp()?.basis === basis) return;
+    const controller = new AbortController();
+    generateInterruptChirp({ profile, todos }, controller.signal).then(chirp => saveNextChirp({ chirp, basis })).catch(() => {});
+    return () => controller.abort();
+  }, [screen, profile, todos]);
 
   useEffect(() => {
     if (!pausedUntil) return;
@@ -78,13 +101,29 @@ export default function App() {
     setPausedUntil(0);
     setScreen("login");
   }
+  function showInterrupt(forProfile: Profile | null) {
+    setInterruptChirp(pickInterruptChirp(forProfile, todos));
+    setScreen("interrupt");
+  }
+  function leaveInterrupt(next: ScreenName) {
+    // The prepared chirp has been used, and the address goes back to / so a refresh doesn't interrupt again.
+    clearNextChirp();
+    setInterruptPending(false);
+    window.history.replaceState(null, "", "/");
+    setScreen(next);
+  }
+  function finishOnboarding(next: Profile | null) {
+    if (next) updateProfile(next);
+    if (interruptPending) showInterrupt(next);
+    else setScreen("home");
+  }
 
   const toggleTodo = (id: string) => updateTodos(todos.map(t => t.id === id ? { ...t, done: !t.done } : t));
   const toActivities = () => setScreen("activities");
   // Snoozing jumps straight to the next escalation tier so the demo doesn't have to wait.
   const screens: Record<ScreenName, ReactNode> = {
     login: <Login onSubmit={user => { updateProfile(user); setScreen("onboarding"); }}/>,
-    onboarding: <Onboarding ai initial={profile ?? undefined} onDone={prefs => { if (profile) updateProfile({ ...profile, ...prefs }); setScreen("home"); }}/>,
+    onboarding: <Onboarding ai initial={profile ?? undefined} onDone={prefs => finishOnboarding(profile ? { ...profile, ...prefs } : null)}/>,
     home: <Home name={profile?.name} todos={todos} onToggleTodo={toggleTodo} onStartSession={() => setScreen("feed")} onNavigate={setScreen}/>,
     todos: <Todos todos={todos} onAdd={text => updateTodos([...todos, { id: String(Date.now()), text, done: false }])} onToggle={toggleTodo} onDelete={id => updateTodos(todos.filter(t => t.id !== id))} onNavigate={setScreen}/>,
     settings: <Settings ai todos={todos} name={profile?.name} email={profile?.email} spice={profile?.spice} paused={paused}
@@ -97,6 +136,14 @@ export default function App() {
     banner: <ChirpBanner chirp={chirps[0]} onAccept={toActivities} onSnooze={() => setScreen("sheet")}/>,
     sheet: <ChirpSheet chirp={chirps[1]} onAccept={toActivities} onSnooze={() => setScreen("takeover")}/>,
     takeover: <ChirpTakeover chirp={chirps[2]} onAccept={toActivities} onSnooze={() => setScreen("home")}/>,
+    interrupt: <Interrupt ai chirp={interruptChirp} spice={profile?.spice} todos={todos}
+      onAccept={() => {
+        // Record the check-in without making the user wait on it.
+        api("/checkins", { method: "POST", body: JSON.stringify({ app: "instagram", action: "went_outside" }) }).catch(() => {});
+        leaveInterrupt("activities");
+      }}
+      onSnooze={minutes => setPausedUntil(Date.now() + minutes * 60 * 1000)}
+      onDismiss={() => leaveInterrupt("home")}/>,
     activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} onStart={activity => { setChosen(activity); setScreen("reward"); }}/>,
     reward: <Reward activity={chosen} tasksDone={todos.filter(t => t.done).length} onDone={() => setScreen("home")}/>,
   };
@@ -104,4 +151,3 @@ export default function App() {
 
   return <div className="app-shell single"><Phone noisy={noisy}>{screens[screen]}</Phone></div>;
 }
-
