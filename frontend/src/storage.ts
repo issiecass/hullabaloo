@@ -1,7 +1,7 @@
 import type { Answers, FilterId, Todo } from "./data";
 import type { Picks } from "./onboarding";
 
-export type Profile = { name: string; email: string; interests?: string[]; spice?: number; filters?: FilterId[]; answers?: Answers; picks?: Picks };
+export type Profile = { name: string; email: string; interests?: string[]; spice?: number; filters?: FilterId[]; answers?: Answers; picks?: Picks; shortcutKey?: string };
 
 // A chirp the model wrote ahead of time for the interrupt page, and what it was written for (see chirpBasis).
 export type PreparedChirp = { chirp: string; basis: string };

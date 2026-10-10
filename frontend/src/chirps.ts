@@ -50,7 +50,7 @@ export function chirpBasis(spice = 2, todos: Todo[] = []): string {
   return `${spice}|${todos.filter(t => !t.done).map(t => t.text).join("|")}`;
 }
 
-const BLOCKED = /\b(fuck\w*|shit\w*|bitch\w*|ass|asshole|damn|crap|stupid|idiot|dumb|moron|loser|ugly|fat|lazy|pathetic|worthless)\b/i;
+const BLOCKED = /\b(fuck\w*|shit\w*|bitch\w*|ass|asshole|damn|crap|stupid|idiot|dumb|moron|loser|ugly|fat|lazy|pathetic|worthless|useless|hopeless|procrastinator\w*|slacker\w*|slob\w*|failure)\b/i;
 
 // Last line of defence on model output: right length, and nothing profane or aimed at the person.
 export function isCleanChirp(text: unknown): text is string {

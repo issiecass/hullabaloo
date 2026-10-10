@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api } from "./api";
+import { api, ApiError, API_URL, clearToken, getToken, setToken, type ApiUser } from "./api";
 import { chirpBasis, fallbackChirps, fallbackInterruptChirp } from "./chirps";
 import Phone from "./components/Phone";
 import type { Tab } from "./components/TabBar";
@@ -13,7 +13,7 @@ import ChirpTakeover from "./screens/ChirpTakeover";
 import FakeFeed from "./screens/FakeFeed";
 import Home from "./screens/Home";
 import Interrupt from "./screens/Interrupt";
-import Login from "./screens/Login";
+import Login, { type AuthResult } from "./screens/Login";
 import Onboarding from "./screens/Onboarding";
 import Reward from "./screens/Reward";
 import Settings from "./screens/Settings";
@@ -32,7 +32,8 @@ function pickInterruptChirp(profile: Profile | null, todos: Todo[]) {
 }
 
 export default function App() {
-  const [profile, setProfile] = useState<Profile | null>(loadProfile);
+  // Being logged in means having a token from the backend; the saved profile alone is not enough.
+  const [profile, setProfile] = useState<Profile | null>(() => getToken() ? loadProfile() : null);
   const [todos, setTodos] = useState<Todo[]>(loadTodos);
   // True when the app was opened on /interrupt (by the Shortcut) and that page hasn't been dealt with yet.
   const [interruptPending, setInterruptPending] = useState(() => window.location.pathname.replace(/\/$/, "") === "/interrupt");
@@ -83,6 +84,23 @@ export default function App() {
     return () => clearTimeout(id);
   }, [pausedUntil]);
 
+  useEffect(() => {
+    // Confirm the saved login with the backend and pick up what it knows that the device doesn't.
+    if (!getToken()) return;
+    api<ApiUser>("/auth/me").then(user => {
+      setProfile(current => {
+        if (!current) return current;
+        const next = { ...current, name: user.name, email: user.email, shortcutKey: user.shortcut_key ?? current.shortcutKey };
+        saveProfile(next);
+        return next;
+      });
+      syncPause(user);
+    }).catch(error => {
+      // An expired or unknown login goes back to the login screen. If the backend is only unreachable, carry on with the saved data.
+      if (error instanceof ApiError && (error.status === 401 || error.status === 404)) logout();
+    });
+  }, []);
+
   // The original all-screens design overview lives at /#gallery.
   if (window.location.hash === "#gallery") return <Gallery/>;
 
@@ -95,11 +113,37 @@ export default function App() {
     setTodos(next);
   }
   function logout() {
-    clearAll();
+    // Only the login is cleared. Preferences and tasks stay on the device for when this account logs back in.
+    clearToken();
     setProfile(null);
-    setTodos(loadTodos());
     setPausedUntil(0);
     setScreen("login");
+  }
+  function syncPause(user: ApiUser) {
+    // A snooze saved in the backend still applies after a reload or on another screen.
+    const until = user.chirps_paused_until ? Date.parse(user.chirps_paused_until) : 0;
+    if (until > Date.now()) setPausedUntil(until);
+  }
+  function handleAuthed({ token, user }: AuthResult) {
+    setToken(token);
+    // Preferences live on the device for now, so they are kept only when the same account logs back in.
+    const stored = loadProfile();
+    const kept = stored && stored.email.toLowerCase() === user.email.toLowerCase() ? stored : null;
+    if (!kept) {
+      clearAll();
+      setTodos([]);
+    }
+    const next: Profile = { ...kept, name: user.name, email: user.email, shortcutKey: user.shortcut_key ?? kept?.shortcutKey };
+    updateProfile(next);
+    syncPause(user);
+    if (next.spice === undefined) setScreen("onboarding");
+    else if (interruptPending) showInterrupt(next);
+    else setScreen("home");
+  }
+  function snoozeFor(minutes: number) {
+    setPausedUntil(Date.now() + minutes * 60 * 1000);
+    // Saving it in the backend is what lets the Shortcut skip the interrupt while the snooze runs.
+    if (profile?.shortcutKey) api("/snooze", { method: "POST", body: JSON.stringify({ key: profile.shortcutKey, minutes }) }).catch(() => {});
   }
   function showInterrupt(forProfile: Profile | null) {
     setInterruptChirp(pickInterruptChirp(forProfile, todos));
@@ -122,13 +166,14 @@ export default function App() {
   const toActivities = () => setScreen("activities");
   // Snoozing jumps straight to the next escalation tier so the demo doesn't have to wait.
   const screens: Record<ScreenName, ReactNode> = {
-    login: <Login onSubmit={user => { updateProfile(user); setScreen("onboarding"); }}/>,
+    login: <Login onAuthed={handleAuthed}/>,
     onboarding: <Onboarding ai initial={profile ?? undefined} onDone={prefs => finishOnboarding(profile ? { ...profile, ...prefs } : null)}/>,
     home: <Home name={profile?.name} todos={todos} onToggleTodo={toggleTodo} onStartSession={() => setScreen("feed")} onNavigate={setScreen}/>,
     todos: <Todos todos={todos} onAdd={text => updateTodos([...todos, { id: String(Date.now()), text, done: false }])} onToggle={toggleTodo} onDelete={id => updateTodos(todos.filter(t => t.id !== id))} onNavigate={setScreen}/>,
     settings: <Settings ai todos={todos} name={profile?.name} email={profile?.email} spice={profile?.spice} paused={paused}
+      shortcutUrl={profile?.shortcutKey ? `${API_URL}/should-interrupt?key=${profile.shortcutKey}` : undefined}
       onSpiceChange={spice => { if (profile) updateProfile({ ...profile, spice }); }}
-      onSnooze={minutes => setPausedUntil(Date.now() + minutes * 60 * 1000)}
+      onSnooze={snoozeFor}
       onStopToday={() => setPausedUntil(new Date().setHours(24, 0, 0, 0))}
       onResume={() => setPausedUntil(0)}
       onEditPrefs={() => setScreen("onboarding")} onLogout={logout} onNavigate={setScreen}/>,
@@ -142,7 +187,7 @@ export default function App() {
         api("/checkins", { method: "POST", body: JSON.stringify({ app: "instagram", action: "went_outside" }) }).catch(() => {});
         leaveInterrupt("activities");
       }}
-      onSnooze={minutes => setPausedUntil(Date.now() + minutes * 60 * 1000)}
+      onSnooze={snoozeFor}
       onDismiss={() => leaveInterrupt("home")}/>,
     activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} onStart={activity => { setChosen(activity); setScreen("reward"); }}/>,
     reward: <Reward activity={chosen} tasksDone={todos.filter(t => t.done).length} onDone={() => setScreen("home")}/>,
