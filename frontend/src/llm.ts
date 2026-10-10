@@ -1,3 +1,4 @@
+import { fallbackChirps, isCleanChirp } from "./chirps";
 import type { Activity, FilterId, Todo } from "./data";
 import type { Profile } from "./storage";
 
@@ -6,40 +7,77 @@ import type { Profile } from "./storage";
 const BASE_URL = import.meta.env.VITE_LLM_BASE_URL ?? "http://localhost:11434/v1";
 const MODEL = import.meta.env.VITE_LLM_MODEL ?? "llama3.2";
 const API_KEY = import.meta.env.VITE_LLM_API_KEY;
-const TIMEOUT_MS = 20000;
+const IDEAS_TIMEOUT_MS = 20000;
+const CHIRPS_TIMEOUT_MS = 12000;
 
 const TAGS = ["QUICK WIN", "NOVELTY", "SOCIAL"] as const;
+const TIERS = [20, 40, 60];
 
-const SYSTEM_PROMPT = `You suggest things a person could do right now instead of scrolling social media.
+const CONTENT_RULES = "Rules: keep everything PG and kind. No profanity, nothing sexual, nothing dangerous or illegal, and no jokes about race, religion, gender, sexuality, disability, nationality, politics, or a person's body, intelligence, worth or mental health.";
+
+const IDEAS_PROMPT = `You suggest things a person could do right now instead of scrolling social media.
 Suggest exactly 3 activities that fit this specific person. Make them concrete and easy to start, not generic advice.
 Reply with JSON only, in this shape:
 {"activities":[{"title":"8 words or fewer","minutes":30,"starter_step":"One action that takes under 5 minutes, 20 words or fewer","tag":"QUICK WIN","free":true,"nearby":true}]}
 "tag" is one of "QUICK WIN", "NOVELTY" or "SOCIAL". "free" means it costs nothing. "nearby" means it can be done at or close to home.
-Rules: keep everything PG and kind. No profanity, nothing sexual, nothing dangerous or illegal, and no jokes about a person's identity, body, intelligence or mental health. Follow every constraint the user gives.`;
+${CONTENT_RULES} Follow every constraint the user gives.`;
 
-export type IdeaRequest = { profile: Profile | null; filters: FilterId[]; todos: Todo[]; request?: string; exclude?: string[] };
+const CHIRPS_PROMPT = `You are Spike, a sarcastic but kind cactus who teases people for scrolling social media too long, the way a good friend would.
+Write 3 chirps for someone who is scrolling right now: one for when they reach 20 minutes, one for 40 minutes and one for 60 minutes. Each is a little more pointed than the last.
+Speak directly to the person as "you". Never use their name and never write about them in the third person.
+When they have unfinished to-dos, mention one of them in every chirp, using a different one each time if you can. Only mention to-dos from their list.
+Each chirp is short: one or two sentences and 20 words at most, with no emoji and no hashtags.
+Observe and tease rather than giving orders or advice.
+Match the spice level you are given: 1 is a friendly nudge, 2 is light teasing, 3 is dry sarcasm, 4 is a full roast that is still clean.
+Tease the habit, never the person: aim at the scrolling, the procrastination and the phone.
+${CONTENT_RULES}
+Reply with JSON only, in this shape: {"at_20_minutes":"...","at_40_minutes":"...","at_60_minutes":"..."}`;
 
-function describeUser({ profile, filters, todos, request, exclude }: IdeaRequest) {
+async function chat(system: string, user: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  signal?.addEventListener("abort", () => controller.abort());
+  try {
+    const res = await fetch(`${BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}) },
+      body: JSON.stringify({
+        model: MODEL,
+        temperature: 0.9,
+        response_format: { type: "json_object" },
+        messages: [{ role: "system", content: system }, { role: "user", content: user }],
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`LLM request failed with status ${res.status}`);
+    const data = await res.json();
+    return data.choices[0].message.content;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Models sometimes wrap JSON in prose or code fences, so parse from the first brace to the last.
+function parseJson(content: string) {
+  return JSON.parse(content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1));
+}
+
+const lines = (items: unknown[]) => items.filter((line): line is string => typeof line === "string" && line !== "").join("\n");
+
+function describeInterests(profile: Profile | null) {
   const answers = profile?.answers;
-  const openTodos = todos.filter(t => !t.done).map(t => t.text);
   return [
     profile?.interests?.length && `Interests: ${profile.interests.join(", ")}`,
     answers?.meaningTo && `Has been meaning to start or get back to: ${answers.meaningTo}`,
     answers?.freeHour.length && `A good free hour for them involves: ${answers.freeHour.join(", ")}`,
     answers?.people && `Wishes they saw more of: ${answers.people}`,
-    answers?.avoid && `Never suggest anything involving: ${answers.avoid}`,
-    openTodos.length && `Unfinished to-dos (one idea may help with one of these): ${openTodos.join("; ")}`,
-    filters.includes("free") && "Constraint: every activity must be free.",
-    filters.includes("nearby") && "Constraint: every activity must be at or close to home.",
-    filters.includes("hour") && "Constraint: every activity must take 60 minutes or less.",
-    exclude?.length && `Do not repeat these ideas: ${exclude.join("; ")}`,
-    request && `What they asked for just now: ${request}`,
-  ].filter((line): line is string => typeof line === "string" && line !== "").join("\n") || "No details given. Suggest broadly appealing ideas.";
+  ];
 }
 
-// Models sometimes wrap JSON in prose or code fences, so parse from the first brace to the last.
+export type IdeaRequest = { profile: Profile | null; filters: FilterId[]; todos: Todo[]; request?: string; exclude?: string[] };
+
 export function parseActivities(content: string): Activity[] {
-  const parsed = JSON.parse(content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1));
+  const parsed = parseJson(content);
   const activities: Activity[] = [];
   for (const item of Array.isArray(parsed?.activities) ? parsed.activities : []) {
     const title = typeof item?.title === "string" ? item.title.trim() : "";
@@ -52,26 +90,43 @@ export function parseActivities(content: string): Activity[] {
   return activities.slice(0, 3);
 }
 
-export async function generateActivities(input: IdeaRequest, signal?: AbortSignal): Promise<Activity[]> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  signal?.addEventListener("abort", () => controller.abort());
-  try {
-    const res = await fetch(`${BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}) },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.9,
-        response_format: { type: "json_object" },
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: describeUser(input) }],
-      }),
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`LLM request failed with status ${res.status}`);
-    const data = await res.json();
-    return parseActivities(data.choices[0].message.content);
-  } finally {
-    clearTimeout(timer);
-  }
+export async function generateActivities({ profile, filters, todos, request, exclude }: IdeaRequest, signal?: AbortSignal): Promise<Activity[]> {
+  const openTodos = todos.filter(t => !t.done).map(t => t.text);
+  const user = lines([
+    ...describeInterests(profile),
+    profile?.answers?.avoid && `Never suggest anything involving: ${profile.answers.avoid}`,
+    openTodos.length && `Unfinished to-dos (one idea may help with one of these): ${openTodos.join("; ")}`,
+    filters.includes("free") && "Constraint: every activity must be free.",
+    filters.includes("nearby") && "Constraint: every activity must be at or close to home.",
+    filters.includes("hour") && "Constraint: every activity must take 60 minutes or less.",
+    exclude?.length && `Do not repeat these ideas: ${exclude.join("; ")}`,
+    request && `What they asked for just now: ${request}`,
+  ]) || "No details given. Suggest broadly appealing ideas.";
+  return parseActivities(await chat(IDEAS_PROMPT, user, IDEAS_TIMEOUT_MS, signal));
+}
+
+// Returns three chirps (20, 40 and 60 minutes). Any line the model gets wrong is replaced by its backup.
+export function parseChirps(content: string, backup: string[]): string[] {
+  const parsed = parseJson(content);
+  const ok = (chirp: unknown, tier: number): chirp is string => {
+    if (!isCleanChirp(chirp)) return false;
+    // Small models sometimes put the wrong duration in a slot, which would contradict the on-screen timer.
+    const minutes = [...chirp.matchAll(/(\d+)\s*-?\s*min/gi)].map(match => Number(match[1]));
+    return minutes.every(value => value === TIERS[tier]);
+  };
+  const chirps = TIERS.map(tier => parsed?.[`at_${tier}_minutes`]);
+  if (!chirps.some(ok)) throw new Error("The model returned no usable chirps");
+  return backup.map((fallback, tier) => { const chirp = chirps[tier]; return ok(chirp, tier) ? chirp.trim() : fallback; });
+}
+
+export async function generateChirps({ profile, todos }: { profile: Profile | null; todos: Todo[] }, signal?: AbortSignal): Promise<string[]> {
+  const spice = profile?.spice ?? 2;
+  const openTodos = todos.filter(t => !t.done).map(t => t.note ? `${t.text} (${t.note})` : t.text);
+  const meaningTo = profile?.answers?.meaningTo;
+  const user = lines([
+    `Spice level: ${spice} of 4`,
+    openTodos.length ? `Their unfinished to-dos: ${openTodos.join("; ")}` : "They have no unfinished to-dos, so tease the scrolling itself.",
+    !openTodos.length && meaningTo && `Something they keep meaning to get back to: ${meaningTo}`,
+  ]);
+  return parseChirps(await chat(CHIRPS_PROMPT, user, CHIRPS_TIMEOUT_MS, signal), fallbackChirps(spice, todos));
 }
