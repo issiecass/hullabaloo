@@ -3,6 +3,7 @@ import TabBar, { type Tab } from "../components/TabBar";
 import TaskRow from "../components/TaskRow";
 import TopBar from "../components/TopBar";
 import { sampleTodos, type Todo } from "../data";
+import Icon from "../components/Icon";
 
 export default function Todos({ todos = sampleTodos, onAdd, onToggle, onDelete, onNavigate }: { todos?: Todo[]; onAdd?: (text: string) => void; onToggle?: (id: string) => void; onDelete?: (id: string) => void; onNavigate?: (tab: Tab) => void }) {
   const [text, setText] = useState("");
@@ -16,8 +17,7 @@ export default function Todos({ todos = sampleTodos, onAdd, onToggle, onDelete, 
   }
 
   return <main className="screen tab-screen">
-    <TopBar title="To-dos"/>
-    <div className="tab-scroll">
+    <TopBar title="To-dos" action={<button type="button" className="top-btn" aria-label="Back to home" onClick={() => onNavigate?.("home")}><Icon name="home" size={18}/></button>}/>    <div className="tab-scroll">
       <div className="greeting"><p>THE LIST</p><h1>Things future you<br/>will thank you for.</h1></div>
       <form className="todo-add" onSubmit={handleSubmit}>
         <input aria-label="New task" placeholder="Add a task" maxLength={200} value={text} onChange={e => setText(e.target.value)}/>

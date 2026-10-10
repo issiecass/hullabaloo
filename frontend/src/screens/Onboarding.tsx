@@ -16,8 +16,7 @@ const MEANING_TO_STEP = cards.length + 1;
 const SPICE_STEP = cards.length + 2;
 
 // With `ai` off (the gallery preview) Spike only uses his written lines.
-export default function Onboarding({ ai = false, initial, onDone }: { ai?: boolean; initial?: Partial<Prefs>; onDone?: (prefs: Prefs) => void }) {
-  const [step, setStep] = useState(0);
+export default function Onboarding({ ai = false, initial, onDone, onExit }: { ai?: boolean; initial?: Partial<Prefs>; onDone?: (prefs: Prefs) => void; onExit?: () => void }) {  const [step, setStep] = useState(0);
   // Spike's latest line, shown above the current question.
   const [reaction, setReaction] = useState(INTRO);
   const [selected, setSelected] = useState(initial?.interests ?? []);
@@ -102,6 +101,7 @@ export default function Onboarding({ ai = false, initial, onDone }: { ai?: boole
   }
 
   return <main className="screen onboarding">
+    {onExit && <button type="button" className="ob-exit" onClick={onExit}>Exit</button>}
     <div className="ob-progress" aria-label={`Step ${step + 1} of ${SPICE_STEP + 1}`}>{Array.from({ length: SPICE_STEP + 1 }, (_, i) => <i key={i} className={i <= step ? "done" : ""}/>)}</div>
     <ChatBubble mood={mood} compact>{reaction}</ChatBubble>
     <div className="bubble ob-question">{question}</div>
