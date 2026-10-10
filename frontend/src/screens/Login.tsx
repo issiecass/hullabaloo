@@ -7,13 +7,30 @@ export default function Login({ onSubmit }: { onSubmit?: (user: { name: string; 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const isSignup = mode === "signup";
 
   // There is no backend yet: the password is only checked for length and is never stored or sent.
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const cleanEmail = email.trim();
-    onSubmit?.({ name: name.trim() || cleanEmail.split("@")[0], email: cleanEmail });
+    setError("");
+    setBusy(true);
+    try {
+      const body = isSignup
+        ? { name: name.trim(), email: email.trim(), password }
+        : { email: email.trim(), password };
+      const { token, user } = await api(isSignup ? "/auth/signup" : "/auth/login", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      localStorage.setItem("token", token);
+      onSubmit?.(user);
+    } catch (err) {
+      setError(isSignup ? "Couldn't create the account. That email may already be in use." : "Wrong email or password.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return <main className="screen login-screen">
