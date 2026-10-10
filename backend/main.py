@@ -4,6 +4,7 @@ import os, random
 from datetime import date, datetime, timedelta
 from typing import Annotated
 from zoneinfo import ZoneInfo
+import httpx
 import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -209,3 +210,33 @@ def delete_todo(todo_id: int, user_id: int = Depends(auth.current_user_id)):
     if not deleted:
         raise HTTPException(404, "Todo not found")
     return Response(status_code=204)
+
+# Gemini, through its OpenAI-compatible endpoint. The key stays on the server; the frontend only ever talks to /llm/chat.
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+
+class LlmChat(BaseModel):
+    system: str = Field(min_length=1, max_length=6000)
+    user: str = Field(min_length=1, max_length=6000)
+
+@app.post("/llm/chat")
+def llm_chat(body: LlmChat, user_id: int = Depends(auth.current_user_id)):
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        raise HTTPException(503, "The LLM is not configured")
+    try:
+        res = httpx.post(
+            GEMINI_URL,
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "model": os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+                "temperature": 0.9,
+                "response_format": {"type": "json_object"},
+                "messages": [{"role": "system", "content": body.system}, {"role": "user", "content": body.user}],
+            },
+            timeout=20,
+        )
+        res.raise_for_status()
+        return {"content": res.json()["choices"][0]["message"]["content"]}
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+        # The frontend falls back to its written lines on any failure, so one generic error is enough.
+        raise HTTPException(502, "The LLM request failed")
