@@ -1,4 +1,4 @@
-import type { Answers, FilterId, Todo } from "./data";
+import type { Answers, FilterId } from "./data";
 import type { Picks } from "./onboarding";
 
 export type Profile = { name: string; email: string; interests?: string[]; spice?: number; filters?: FilterId[]; answers?: Answers; picks?: Picks; shortcutKey?: string };
@@ -7,7 +7,6 @@ export type Profile = { name: string; email: string; interests?: string[]; spice
 export type PreparedChirp = { chirp: string; basis: string };
 
 const PROFILE_KEY = "touchgrass.profile";
-const TODOS_KEY = "touchgrass.todos";
 const NEXT_CHIRP_KEY = "touchgrass.nextChirp";
 
 // localStorage can throw (private windows, blocked storage), so every access is guarded.
@@ -40,14 +39,6 @@ export function saveProfile(profile: Profile) {
   write(PROFILE_KEY, profile);
 }
 
-export function loadTodos(): Todo[] {
-  return read<Todo[]>(TODOS_KEY) ?? [];
-}
-
-export function saveTodos(todos: Todo[]) {
-  write(TODOS_KEY, todos);
-}
-
 export function loadNextChirp(): PreparedChirp | null {
   return read<PreparedChirp>(NEXT_CHIRP_KEY);
 }
@@ -62,6 +53,5 @@ export function clearNextChirp() {
 
 export function clearAll() {
   remove(PROFILE_KEY);
-  remove(TODOS_KEY);
   remove(NEXT_CHIRP_KEY);
 }

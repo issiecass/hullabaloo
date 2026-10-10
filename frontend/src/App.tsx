@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api, ApiError, API_URL, clearToken, getToken, setToken, type ApiUser } from "./api";
+import { api, ApiError, API_URL, clearToken, createTodo, deleteTodo, fetchTodos, getToken, setToken, updateTodo, type ApiUser } from "./api";
 import { chirpBasis, fallbackChirps, fallbackInterruptChirp } from "./chirps";
 import Phone from "./components/Phone";
 import type { Tab } from "./components/TabBar";
@@ -18,7 +18,7 @@ import Onboarding from "./screens/Onboarding";
 import Reward from "./screens/Reward";
 import Settings from "./screens/Settings";
 import Todos from "./screens/Todos";
-import { clearAll, clearNextChirp, loadNextChirp, loadProfile, loadTodos, saveNextChirp, saveProfile, saveTodos, type Profile } from "./storage";
+import { clearAll, clearNextChirp, loadNextChirp, loadProfile, saveNextChirp, saveProfile, type Profile } from "./storage";
 
 type ScreenName = "login" | "onboarding" | Tab | "feed" | "banner" | "sheet" | "takeover" | "interrupt" | "activities" | "reward";
 
@@ -34,7 +34,7 @@ function pickInterruptChirp(profile: Profile | null, todos: Todo[]) {
 export default function App() {
   // Being logged in means having a token from the backend; the saved profile alone is not enough.
   const [profile, setProfile] = useState<Profile | null>(() => getToken() ? loadProfile() : null);
-  const [todos, setTodos] = useState<Todo[]>(loadTodos);
+  const [todos, setTodos] = useState<Todo[]>([]);
   // True when the app was opened on /interrupt (by the Shortcut) and that page hasn't been dealt with yet.
   const [interruptPending, setInterruptPending] = useState(() => window.location.pathname.replace(/\/$/, "") === "/interrupt");
   // The interrupt page needs a logged-in user, so a logged-out visitor goes through login first.
@@ -101,6 +101,24 @@ export default function App() {
     });
   }, []);
 
+  const loggedIn = profile !== null;
+  useEffect(() => {
+    if (!loggedIn) {
+      setTodos([]);
+      return;
+    }
+    let cancelled = false;
+    fetchTodos().then(list => {
+      if (cancelled) return;
+      setTodos(list);
+      // The interrupt page may already be showing a chirp picked before the list arrived.
+      if (interruptPending) setInterruptChirp(pickInterruptChirp(profile, list));
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [loggedIn]);
+
   // The original all-screens design overview lives at /#gallery.
   if (window.location.hash === "#gallery") return <Gallery/>;
 
@@ -108,12 +126,25 @@ export default function App() {
     saveProfile(next);
     setProfile(next);
   }
-  function updateTodos(next: Todo[]) {
-    saveTodos(next);
-    setTodos(next);
+  function reloadTodos() {
+    fetchTodos().then(setTodos).catch(() => {});
+  }
+  function addTodo(text: string) {
+    createTodo(text).then(todo => setTodos(current => [...current, todo])).catch(() => {});
+  }
+  function toggleTodo(id: string) {
+    const todo = todos.find(t => t.id === id);
+    if (!todo) return;
+    // Flip it straight away; the saved copy from the backend replaces it, or the list reloads if saving fails.
+    setTodos(current => current.map(t => t.id === id ? { ...t, done: !todo.done } : t));
+    updateTodo(id, { done: !todo.done }).then(saved => setTodos(current => current.map(t => t.id === id ? saved : t))).catch(reloadTodos);
+  }
+  function removeTodo(id: string) {
+    setTodos(current => current.filter(t => t.id !== id));
+    deleteTodo(id).catch(reloadTodos);
   }
   function logout() {
-    // Only the login is cleared. Preferences and tasks stay on the device for when this account logs back in.
+    // Only the login is cleared. Preferences stay on the device for when this account logs back in.
     clearToken();
     setProfile(null);
     setPausedUntil(0);
@@ -129,10 +160,7 @@ export default function App() {
     // Preferences live on the device for now, so they are kept only when the same account logs back in.
     const stored = loadProfile();
     const kept = stored && stored.email.toLowerCase() === user.email.toLowerCase() ? stored : null;
-    if (!kept) {
-      clearAll();
-      setTodos([]);
-    }
+    if (!kept) clearAll();
     const next: Profile = { ...kept, name: user.name, email: user.email, shortcutKey: user.shortcut_key ?? kept?.shortcutKey };
     updateProfile(next);
     syncPause(user);
@@ -162,14 +190,13 @@ export default function App() {
     else setScreen("home");
   }
 
-  const toggleTodo = (id: string) => updateTodos(todos.map(t => t.id === id ? { ...t, done: !t.done } : t));
   const toActivities = () => setScreen("activities");
   // Snoozing jumps straight to the next escalation tier so the demo doesn't have to wait.
   const screens: Record<ScreenName, ReactNode> = {
     login: <Login onAuthed={handleAuthed}/>,
     onboarding: <Onboarding ai initial={profile ?? undefined} onDone={prefs => finishOnboarding(profile ? { ...profile, ...prefs } : null)}/>,
     home: <Home name={profile?.name} todos={todos} onToggleTodo={toggleTodo} onStartSession={() => setScreen("feed")} onNavigate={setScreen}/>,
-    todos: <Todos todos={todos} onAdd={text => updateTodos([...todos, { id: String(Date.now()), text, done: false }])} onToggle={toggleTodo} onDelete={id => updateTodos(todos.filter(t => t.id !== id))} onNavigate={setScreen}/>,
+    todos: <Todos todos={todos} onAdd={addTodo} onToggle={toggleTodo} onDelete={removeTodo} onNavigate={setScreen}/>,
     settings: <Settings ai todos={todos} name={profile?.name} email={profile?.email} spice={profile?.spice} paused={paused}
       shortcutUrl={profile?.shortcutKey ? `${API_URL}/should-interrupt?key=${profile.shortcutKey}` : undefined}
       onSpiceChange={spice => { if (profile) updateProfile({ ...profile, spice }); }}
