@@ -103,7 +103,6 @@ def stats():
         day -= timedelta(days=1)
     return {"checkins": total, "streak": streak}
 
-USER_COLUMNS = "id, name, email, spice_level, interests, filters, answers, chirps_paused_until, created_at"
 
 class Signup(BaseModel):
     name: str = Field(min_length=1, max_length=100)
