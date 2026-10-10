@@ -9,10 +9,52 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, StringConstraints
 import auth, db
+import uuid
+from typing import Literal
+from fastapi.responses import PlainTextResponse
+
+USER_COLUMNS = "id, name, email, spice_level, interests, filters, answers, chirps_paused_until, created_at, shortcut_key"
 
 TZ = ZoneInfo("America/New_York")
 
 app = FastAPI()
+
+def parse_key(raw: str | None):
+    try:
+        return uuid.UUID(raw) if raw else None
+    except ValueError:
+        return None
+
+@app.get("/should-interrupt", response_class=PlainTextResponse)
+def should_interrupt(key: str | None = None):
+    k = parse_key(key)
+    if k is None:
+        return "yes"
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT chirps_paused_until > now() AS paused FROM users WHERE shortcut_key = %s",
+            (k,),
+        ).fetchone()
+    return "no" if row and row["paused"] else "yes"
+
+class Snooze(BaseModel):
+    key: str
+    minutes: Literal[1, 15, 30]
+
+@app.post("/snooze")
+def snooze(body: Snooze):
+    k = parse_key(body.key)
+    if k is None:
+        raise HTTPException(404, "Unknown key")
+    with db.connect() as conn:
+        row = conn.execute(
+            "UPDATE users SET chirps_paused_until = now() + make_interval(mins => %s) "
+            "WHERE shortcut_key = %s RETURNING id",
+            (body.minutes, k),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Unknown key")
+    return {"ok": True}
 
 origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")]
 app.add_middleware(CORSMiddleware, allow_origins=origins,
