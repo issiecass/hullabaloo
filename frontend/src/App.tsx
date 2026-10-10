@@ -84,7 +84,7 @@ export default function App() {
   // Snoozing jumps straight to the next escalation tier so the demo doesn't have to wait.
   const screens: Record<ScreenName, ReactNode> = {
     login: <Login onSubmit={user => { updateProfile(user); setScreen("onboarding"); }}/>,
-    onboarding: <Onboarding initial={profile ?? undefined} onDone={prefs => { if (profile) updateProfile({ ...profile, ...prefs }); setScreen("home"); }}/>,
+    onboarding: <Onboarding ai initial={profile ?? undefined} onDone={prefs => { if (profile) updateProfile({ ...profile, ...prefs }); setScreen("home"); }}/>,
     home: <Home name={profile?.name} todos={todos} onToggleTodo={toggleTodo} onStartSession={() => setScreen("feed")} onNavigate={setScreen}/>,
     todos: <Todos todos={todos} onAdd={text => updateTodos([...todos, { id: String(Date.now()), text, done: false }])} onToggle={toggleTodo} onDelete={id => updateTodos(todos.filter(t => t.id !== id))} onNavigate={setScreen}/>,
     settings: <Settings ai todos={todos} name={profile?.name} email={profile?.email} spice={profile?.spice} paused={paused}
@@ -104,3 +104,4 @@ export default function App() {
 
   return <div className="app-shell single"><Phone noisy={noisy}>{screens[screen]}</Phone></div>;
 }
+

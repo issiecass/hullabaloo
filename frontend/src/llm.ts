@@ -1,5 +1,6 @@
 import { fallbackChirps, isCleanChirp, snoozeOptions } from "./chirps";
-import type { Activity, FilterId, Todo } from "./data";
+import { spiceLevels, type Activity, type FilterId, type Todo } from "./data";
+import { cards, spiceSamples, type Card } from "./onboarding";
 import type { Profile } from "./storage";
 
 // Any OpenAI-compatible chat endpoint works here (Ollama, LM Studio, Groq, OpenRouter, Together).
@@ -43,6 +44,15 @@ Tease the habit of putting things off, never the person.
 ${CONTENT_RULES}
 Reply with JSON only, in this shape: {"snooze_1":"...","snooze_15":"...","snooze_30":"..."}`;
 
+const ONBOARDING_PROMPT = `You are Spike, a sarcastic but kind cactus in an app that nags people off social media. A new user is telling you about themselves.
+You will be given a list of keys, each with a situation. Write one line from Spike for each key.
+Each line is a single teasing one-liner of 16 words at most. When the situation is an answer they gave, start by echoing the answer, then poke fun at their scrolling habit.
+Speak directly to the person as "you". No emoji, no hashtags and no questions.
+If you are told their interests, you may work one of them in.
+Tease the habit, never the person.
+${CONTENT_RULES}
+Reply with JSON only: one object with exactly the keys you were given, each mapped to its line.`;
+
 async function chat(system: string, user: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -76,8 +86,11 @@ const lines = (items: unknown[]) => items.filter((line): line is string => typeo
 
 function describeInterests(profile: Profile | null) {
   const answers = profile?.answers;
+  const picks = profile?.picks ?? {};
+  const pickSummaries = cards.flatMap(card => card.options.filter(option => picks[card.id] === option.id).map(option => option.summary));
   return [
     profile?.interests?.length && `Interests: ${profile.interests.join(", ")}`,
+    pickSummaries.length && `How they like to spend free time: ${pickSummaries.join("; ")}`,
     answers?.meaningTo && `Has been meaning to start or get back to: ${answers.meaningTo}`,
     answers?.freeHour.length && `A good free hour for them involves: ${answers.freeHour.join(", ")}`,
     answers?.people && `Wishes they saw more of: ${answers.people}`,
@@ -152,4 +165,31 @@ export async function generateSnoozeComments({ spice = 2, todos }: { spice?: num
   const comments = snoozeOptions.map(option => parsed?.[`snooze_${option.minutes}`]);
   if (!comments.some((comment, i) => isCleanLine(comment, snoozeOptions[i].minutes))) throw new Error("The model returned no usable snooze comments");
   return snoozeOptions.map((option, i) => { const comment = comments[i]; return isCleanLine(comment, option.minutes) ? comment.trim() : option.comment; });
+}
+
+// One line the model is asked to write during onboarding: where it goes, what happened, and a written example of the tone.
+export type LineRequest = { key: string; situation: string; example: string };
+
+export function cardLineRequests(batch: Card[]): LineRequest[] {
+  return batch.flatMap(card => card.options.map(option => ({ key: `${card.id}_${option.id}`, situation: `they answered "${option.label}" to "${card.question}"`, example: option.reaction })));
+}
+
+export function spiceLineRequests(): LineRequest[] {
+  return spiceSamples.map((example, i) => ({ key: `spice_${i + 1}`, situation: `they allowed harshness level ${i + 1} of 4 (${spiceLevels[i].name}), so show off a sample roast about scrolling at exactly that level`, example }));
+}
+
+// Returns the lines that came back usable, by key. A missing key means "use the written line for that one".
+export async function generateOnboardingLines(requests: LineRequest[], interests: string[], signal?: AbortSignal): Promise<Record<string, string>> {
+  const user = lines([
+    interests.length && `Their interests: ${interests.join(", ")}`,
+    "Write a line for each key:",
+    ...requests.map(request => `${request.key}: ${request.situation}. Tone example, do not copy it: "${request.example}"`),
+  ]);
+  const parsed = parseJson(await chat(ONBOARDING_PROMPT, user, CHIRPS_TIMEOUT_MS, signal));
+  const result: Record<string, string> = {};
+  for (const { key } of requests) {
+    const line = parsed?.[key];
+    if (isCleanChirp(line)) result[key] = line.trim();
+  }
+  return result;
 }
