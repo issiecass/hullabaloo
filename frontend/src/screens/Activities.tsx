@@ -10,7 +10,7 @@ import { generateActivities } from "../llm";
 import type { Profile } from "../storage";
 
 // With `ai` off (the gallery preview) ideas come straight from the backup list.
-export default function Activities({ ai = false, profile = null, todos = [], initialFilters = defaultFilters, onStart }: { ai?: boolean; profile?: Profile | null; todos?: Todo[]; initialFilters?: FilterId[]; onStart?: (activity: Activity) => void }) {
+export default function Activities({ ai = false, profile = null, todos = [], initialFilters = defaultFilters, onStart }: { ai?: boolean; profile?: Profile | null; todos?: Todo[]; initialFilters?: FilterId[]; onStart?: (activity: Activity, filters: FilterId[]) => void }) {
   const [filters, setFilters] = useState(initialFilters);
   const [cards, setCards] = useState<Activity[]>(() => ai ? [] : pickActivities(initialFilters));
   const [active, setActive] = useState(0);
@@ -70,6 +70,6 @@ export default function Activities({ ai = false, profile = null, todos = [], ini
           {[2,1,0].filter(offset => offset < cards.length).map((offset) => { const index = (active + offset) % cards.length; return <div className={`stack-pos pos-${offset}`} key={`${cards[index].title}-${offset}`}><ActivityCard activity={cards[index]} index={index}/></div>; })}
         </div>}
     <div className="swipe-hint">{ai && status === "backup" ? "Couldn’t reach the AI, so these are from Spike’s backup list." : <><span>←</span> Tap the card to browse <span>→</span></>}</div>
-    <div className="dual-actions"><Button variant="secondary" icon="refresh" disabled={loading} onClick={() => load(filters, cards)}>Reroll</Button><Button icon="play" disabled={loading || cards.length === 0} onClick={() => onStart?.(cards[active])}>Start</Button></div>
+    <div className="dual-actions"><Button icon="play" disabled={loading || cards.length === 0} onClick={() => onStart?.(cards[active], filters)}>Start</Button></div>
   </main>;
 }

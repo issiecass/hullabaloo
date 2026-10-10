@@ -19,6 +19,34 @@ TZ = ZoneInfo("America/New_York")
 
 app = FastAPI()
 
+class CompletedActivity(BaseModel):
+    tag: Literal["QUICK WIN", "NOVELTY", "SOCIAL"]
+    title: str = Field(min_length=1, max_length=200)
+    minutes: int = Field(gt=0, le=1440)
+    step: str = Field(min_length=1, max_length=500)
+    free: bool
+    nearby: bool
+
+@app.post("/activities/complete", status_code=201)
+def complete_activity(a: CompletedActivity, user_id: int = Depends(auth.current_user_id)):
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO completed_activities (user_id, tag, title, minutes, step, free, nearby) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (user_id, a.tag, a.title, a.minutes, a.step, a.free, a.nearby),
+        )
+    return {"ok": True}
+
+@app.get("/receipt")
+def receipt(user_id: int = Depends(auth.current_user_id)):
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT count(*) AS activities, coalesce(sum(minutes), 0) AS minutes "
+            "FROM completed_activities WHERE user_id = %s",
+            (user_id,),
+        ).fetchone()
+    return row
+
 def parse_key(raw: str | None):
     try:
         return uuid.UUID(raw) if raw else None

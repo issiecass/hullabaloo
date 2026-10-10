@@ -216,7 +216,22 @@ export default function App() {
       }}
       onSnooze={snoozeFor}
       onDismiss={() => leaveInterrupt("home")}/>,
-    activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} onStart={activity => { setChosen(activity); setScreen("reward"); }}/>,
+    activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} 
+    onStart={(activity, filters) => {
+      setChosen(activity);
+      api("/activities/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          tag: activity.tag.toUpperCase(),
+          title: activity.title,
+          minutes: activity.minutes,
+          step: activity.step,
+          free: filters.includes("free"),
+          nearby: filters.includes("nearby"),
+        }),
+    }).catch(() => {});   // never make the user wait on it
+    setScreen("reward");
+}}/>,
     reward: <Reward activity={chosen} tasksDone={todos.filter(t => t.done).length} onDone={() => setScreen("home")}/>,
   };
   const noisy = screen === "feed" || screen === "banner" || screen === "sheet";
