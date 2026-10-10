@@ -1,49 +1,138 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Button from "../components/Button";
 import ChatBubble from "../components/ChatBubble";
 import Chip from "../components/Chip";
 import SpiceCard from "../components/SpiceCard";
 import type { SpikeMood } from "../components/Spike";
-import { defaultFilters, filterOptions, freeHourOptions, type Answers, type FilterId } from "../data";
+import type { Answers, FilterId } from "../data";
+import { cardLineRequests, generateOnboardingLines, spiceLineRequests, type LineRequest } from "../llm";
+import { cards, interestOptions, interestsQuestion, interestsReaction, meaningToPlaceholder, meaningToQuestion, meaningToReaction, outro, skipReaction, spiceQuestion, spiceSamples, type CardOption, type Picks } from "../onboarding";
 
-export type Prefs = { interests: string[]; spice: number; filters: FilterId[]; answers: Answers };
+export type Prefs = { interests: string[]; spice: number; filters: FilterId[]; answers: Answers; picks: Picks };
 
-const toggle = <T,>(list: T[], item: T) => list.includes(item) ? list.filter(x => x !== item) : [...list, item];
+const INTRO = "I’m Spike. Before I start roasting you, I need material.";
+// Steps: 0 is interests, then one per card, then the typed question, then spice.
+const MEANING_TO_STEP = cards.length + 1;
+const SPICE_STEP = cards.length + 2;
 
-export default function Onboarding({ initial, onDone }: { initial?: Partial<Prefs>; onDone?: (prefs: Prefs) => void }) {
-  const interests = ["Reading", "Cooking", "Fitness", "Music", "Outdoors", "Art", "Gaming"];
-  const [step, setStep] = useState<1 | 2>(1);
-  const [selected, setSelected] = useState(initial?.interests ?? ["Reading", "Cooking", "Outdoors"]);
-  const [spice, setSpice] = useState(initial?.spice ?? 2);
-  const [filters, setFilters] = useState(initial?.filters ?? defaultFilters);
-  const [answers, setAnswers] = useState<Answers>(initial?.answers ?? { meaningTo: "", freeHour: [], people: "", avoid: "" });
-  const moods: SpikeMood[] = ["mild", "playful", "sassy", "spicy"];
+// With `ai` off (the gallery preview) Spike only uses his written lines.
+export default function Onboarding({ ai = false, initial, onDone }: { ai?: boolean; initial?: Partial<Prefs>; onDone?: (prefs: Prefs) => void }) {
+  const [step, setStep] = useState(0);
+  // Spike's latest line, shown above the current question.
+  const [reaction, setReaction] = useState(INTRO);
+  const [selected, setSelected] = useState(initial?.interests ?? []);
+  const [custom, setCustom] = useState("");
+  const [picks, setPicks] = useState<Picks>(initial?.picks ?? {});
+  const [meaningTo, setMeaningTo] = useState(initial?.answers?.meaningTo ?? "");
+  const [spice, setSpice] = useState(initial?.spice ?? 0);
+  const [spiceTouched, setSpiceTouched] = useState(false);
+  // Lines the model has written so far, by key. Anything missing falls back to the written line.
+  const modelLines = useRef<Record<string, string>>({});
+  const controllers = useRef<AbortController[]>([]);
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    onDone?.({ interests: selected, spice, filters, answers: { ...answers, meaningTo: answers.meaningTo.trim(), people: answers.people.trim(), avoid: answers.avoid.trim() } });
+  // Ask the model for lines ahead of time, so they are ready by the time the user gets there.
+  function prepare(requests: LineRequest[], interests: string[]) {
+    if (!ai) return;
+    const controller = new AbortController();
+    controllers.current.push(controller);
+    generateOnboardingLines(requests, interests, controller.signal).then(found => { Object.assign(modelLines.current, found); }).catch(() => {});
   }
 
-  if (step === 2) return <main className="screen onboarding">
-    <div className="mini-logo">TOUCH GRASS</div>
-    <ChatBubble mood={moods[spice - 1]} compact>Four quick questions, so my ideas are about you and not some generic human. Skip any you like.</ChatBubble>
-    <form className="login-form" onSubmit={handleSubmit}>
-      <label className="field"><span>What have you been meaning to start or get back to?</span><input type="text" placeholder="Guitar, running, that half-read novel" value={answers.meaningTo} onChange={e => setAnswers({ ...answers, meaningTo: e.target.value })}/></label>
-      <div className="field"><span>A good free hour looks like…</span><div className="chips">{freeHourOptions.map(o => <Chip key={o} active={answers.freeHour.includes(o)} onClick={() => setAnswers({ ...answers, freeHour: toggle(answers.freeHour, o) })}>{o}</Chip>)}</div></div>
-      <label className="field"><span>Who do you wish you saw more?</span><input type="text" placeholder="My sister, friends from college" value={answers.people} onChange={e => setAnswers({ ...answers, people: e.target.value })}/></label>
-      <label className="field"><span>Anything I should never suggest?</span><input type="text" placeholder="No car, bad knee, hate cooking" value={answers.avoid} onChange={e => setAnswers({ ...answers, avoid: e.target.value })}/></label>
-      <Button>Let’s go</Button>
-    </form>
-    <button type="button" className="link-btn" onClick={() => setStep(1)}>Back</button>
-  </main>;
+  useEffect(() => {
+    prepare(cardLineRequests(cards.slice(0, 3)), []);
+    return () => controllers.current.forEach(controller => controller.abort());
+  }, []);
+
+  const card = step >= 1 && step <= cards.length ? cards[step - 1] : null;
+  const options = [...interestOptions, ...selected.filter(interest => !interestOptions.includes(interest))];
+  const moods: SpikeMood[] = ["mild", "playful", "sassy", "spicy"];
+  const mood = step === SPICE_STEP && spice ? moods[spice - 1] : "playful";
+  const question = step === 0 ? interestsQuestion : card ? card.question : step === MEANING_TO_STEP ? meaningToQuestion : spiceTouched ? outro : spiceQuestion;
+
+  function toggleInterest(interest: string) {
+    setSelected(selected.includes(interest) ? selected.filter(x => x !== interest) : [...selected, interest]);
+  }
+  function addCustom(e: FormEvent) {
+    e.preventDefault();
+    const clean = custom.trim();
+    if (clean && !selected.some(interest => interest.toLowerCase() === clean.toLowerCase())) {
+      const known = interestOptions.find(option => option.toLowerCase() === clean.toLowerCase());
+      setSelected([...selected, known ?? clean]);
+    }
+    setCustom("");
+  }
+  function sendInterests() {
+    // The later cards and the spice samples are requested now, so they can use the interests.
+    prepare([...cardLineRequests(cards.slice(3)), ...spiceLineRequests()], selected);
+    setReaction(interestsReaction(selected.length));
+    setStep(1);
+  }
+  function pick(option: CardOption) {
+    if (!card) return;
+    setPicks({ ...picks, [card.id]: option.id });
+    setReaction(modelLines.current[`${card.id}_${option.id}`] ?? option.reaction);
+    setStep(step + 1);
+  }
+  function skipCard() {
+    if (!card) return;
+    const rest = { ...picks };
+    delete rest[card.id];
+    setPicks(rest);
+    setReaction(skipReaction);
+    setStep(step + 1);
+  }
+  function sendMeaningTo(e: FormEvent) {
+    e.preventDefault();
+    setReaction(meaningToReaction(meaningTo.trim()));
+    setStep(SPICE_STEP);
+  }
+  function chooseSpice(level: number) {
+    setSpice(level);
+    setSpiceTouched(true);
+    setReaction(modelLines.current[`spice_${level}`] ?? spiceSamples[level - 1]);
+  }
+  function back() {
+    setReaction(step === 1 ? INTRO : "Fine. Have another go.");
+    setStep(step - 1);
+  }
+  function finish() {
+    // The first three cards double as the ideas filters.
+    const filters = cards.flatMap(c => c.options.filter(option => option.filter && picks[c.id] === option.id).map(option => option.filter as FilterId));
+    onDone?.({ interests: selected, spice, filters, picks, answers: { meaningTo: meaningTo.trim(), freeHour: [], people: initial?.answers?.people ?? "", avoid: initial?.answers?.avoid ?? "" } });
+  }
 
   return <main className="screen onboarding">
-    <div className="mini-logo">TOUCH GRASS</div>
-    <ChatBubble mood={moods[spice - 1]}>I’m Spike. I’ll lovingly roast you off your feed and back into your life.</ChatBubble>
-    <div className="section-heading"><span>What are you into?</span><small>Pick a few. I’m not psychic.</small></div>
-    <div className="chips">{interests.map(i => <Chip key={i} active={selected.includes(i)} onClick={() => setSelected(v => toggle(v, i))}>{i}</Chip>)}</div>
-    <SpiceCard spice={spice} onChange={setSpice}/>
-    <div className="defaults"><span>Default suggestions</span><div className="chips">{filterOptions.map(f => <Chip key={f.id} active={filters.includes(f.id)} onClick={() => setFilters(v => toggle(v, f.id))}>{f.longLabel}</Chip>)}</div></div>
-    <Button onClick={() => setStep(2)}>Next</Button>
+    <div className="ob-progress" aria-label={`Step ${step + 1} of ${SPICE_STEP + 1}`}>{Array.from({ length: SPICE_STEP + 1 }, (_, i) => <i key={i} className={i <= step ? "done" : ""}/>)}</div>
+    <ChatBubble mood={mood} compact>{reaction}</ChatBubble>
+    <div className="bubble ob-question">{question}</div>
+
+    {step === 0 && <>
+      <div className="chips">{options.map(interest => <Chip key={interest} active={selected.includes(interest)} onClick={() => toggleInterest(interest)}>{interest}</Chip>)}</div>
+      <form className="todo-add ob-add" onSubmit={addCustom}>
+        <input aria-label="Add your own interest" placeholder="Add your own…" value={custom} onChange={e => setCustom(e.target.value)}/>
+        <button className="todo-add-btn" aria-label="Add interest">+</button>
+      </form>
+      <Button onClick={sendInterests}>{selected.length ? "That’s me" : "Skip"}</Button>
+    </>}
+
+    {card && <>
+      <div className="tt-pair">
+        {card.options.map((option, i) => <button type="button" key={option.id} className={`tt-card ${i === 1 ? "alt" : ""} ${picks[card.id] === option.id ? "picked" : ""}`} onClick={() => pick(option)}><strong>{option.label}</strong><small>{option.caption}</small></button>)}
+        <span className="tt-or">or</span>
+      </div>
+      <button type="button" className="link-btn" onClick={skipCard}>Skip this one</button>
+    </>}
+
+    {step === MEANING_TO_STEP && <form className="login-form" onSubmit={sendMeaningTo}>
+      <label className="field"><input type="text" aria-label="What you have been meaning to get back to" placeholder={meaningToPlaceholder} value={meaningTo} onChange={e => setMeaningTo(e.target.value)}/></label>
+      <Button>{meaningTo.trim() ? "Send" : "Skip"}</Button>
+    </form>}
+
+    {step === SPICE_STEP && <>
+      <SpiceCard spice={spice} onChange={chooseSpice}/>
+      <Button disabled={!spice} onClick={finish}>Let’s go</Button>
+    </>}
+
+    {step > 0 && <button type="button" className="link-btn" onClick={back}>Back</button>}
   </main>;
 }

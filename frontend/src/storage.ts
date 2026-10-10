@@ -1,6 +1,7 @@
 import type { Answers, FilterId, Todo } from "./data";
+import type { Picks } from "./onboarding";
 
-export type Profile = { name: string; email: string; interests?: string[]; spice?: number; filters?: FilterId[]; answers?: Answers };
+export type Profile = { name: string; email: string; interests?: string[]; spice?: number; filters?: FilterId[]; answers?: Answers; picks?: Picks };
 
 const PROFILE_KEY = "touchgrass.profile";
 const TODOS_KEY = "touchgrass.todos";
