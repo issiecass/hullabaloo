@@ -1,13 +1,10 @@
+import { api } from "./api";
 import { fallbackChirps, isCleanChirp, snoozeOptions } from "./chirps";
 import { spiceLevels, type Activity, type FilterId, type Todo } from "./data";
 import { cards, spiceSamples, type Card } from "./onboarding";
 import type { Profile } from "./storage";
 
-// Any OpenAI-compatible chat endpoint works here (Ollama, LM Studio, Groq, OpenRouter, Together).
-// The default is Ollama running on the same machine, which needs no key.
-const BASE_URL = import.meta.env.VITE_LLM_BASE_URL ?? "http://localhost:11434/v1";
-const MODEL = import.meta.env.VITE_LLM_MODEL ?? "llama3.2";
-const API_KEY = import.meta.env.VITE_LLM_API_KEY;
+// The model is reached through the backend's /llm/chat, which holds the API key. Nothing here talks to the provider directly.
 const IDEAS_TIMEOUT_MS = 20000;
 const CHIRPS_TIMEOUT_MS = 12000;
 
@@ -64,25 +61,14 @@ Tease the habit, never the person.
 ${CONTENT_RULES}
 Reply with JSON only: one object with exactly the keys you were given, each mapped to its line.`;
 
+// Sends one request to the model through the backend and returns its reply text. Throws on any failure or timeout.
 async function chat(system: string, user: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   signal?.addEventListener("abort", () => controller.abort());
   try {
-    const res = await fetch(`${BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}) },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.9,
-        response_format: { type: "json_object" },
-        messages: [{ role: "system", content: system }, { role: "user", content: user }],
-      }),
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`LLM request failed with status ${res.status}`);
-    const data = await res.json();
-    return data.choices[0].message.content;
+    const { content } = await api<{ content: string }>("/llm/chat", { method: "POST", body: JSON.stringify({ system, user }), signal: controller.signal });
+    return content;
   } finally {
     clearTimeout(timer);
   }
