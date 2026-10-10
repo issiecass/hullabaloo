@@ -1,0 +1,10 @@
+{
+  "description": "An AI companion playfully roasts social media scrollers and suggests fun, productive activities to help users reclaim time and boost motivation.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
