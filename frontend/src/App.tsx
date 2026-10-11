@@ -263,7 +263,10 @@ export default function App() {
             // Saving the activity also updates the user's XP in the database and returns the new total.
       setTotalXp(undefined);
       completeActivity(activity, filters)
-        .then(result => setTotalXp(result?.xp ?? undefined))
+        .then(result => {
+          setTotalXp(result.xp_total);
+          setReceipt(current => current && current.activity === activity ? { ...current, totalXp: result.xp_total } : current);
+        })
         .catch(err => console.error("completeActivity failed:", err));
       setScreen('reward');
     }}/>,
