@@ -9,7 +9,7 @@ import { sampleTodos, type Todo } from "../data";
 import { formatCountdown } from "../session";
 import type { ScrollSession } from "../storage";
 
-export default function Home({ name = "Jordan", todos = sampleTodos, session = null, onToggleTodo, onStartSession, onEndSession, onNavigate }: { name?: string; todos?: Todo[]; session?: ScrollSession | null; onToggleTodo?: (id: string) => void; onStartSession?: (seconds: number) => void; onEndSession?: () => void; onNavigate?: (tab: Tab) => void }) {
+export default function Home({ name = "Jordan", todos = sampleTodos, session = null, totalXp, onToggleTodo, onStartSession, onEndSession, onNavigate }: { name?: string; todos?: Todo[]; session?: ScrollSession | null; totalXp?: number; onToggleTodo?: (id: string) => void; onStartSession?: (seconds: number) => void; onEndSession?: () => void; onNavigate?: (tab: Tab) => void }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   // Re-read the clock twice a second while a session runs, so the countdown ticks.
   const [now, setNow] = useState(Date.now);
@@ -31,6 +31,7 @@ export default function Home({ name = "Jordan", todos = sampleTodos, session = n
     <TopBar title="Home" action={<button className="avatar" aria-label="Settings" onClick={() => onNavigate?.("settings")}>{initials}</button>}/>
     <div className="home-scroll">
       <div className="greeting"><p>HEY, {firstName.toUpperCase()}</p><h1>Ready to do literally<br/>anything else?</h1></div>
+      <div className="xp-stat"><span>REAL-LIFE XP</span><strong>{totalXp === undefined ? "…" : totalXp.toLocaleString()}</strong></div>
       {session
         ? <div className="scroll-stat counting"><div><span>Scrolling time left</span><strong>{formatCountdown((session.endsAt - now) / 1000)}</strong></div><small>{session.line}</small></div>
         : <div className="scroll-stat"><div><span>Scrolling timer</span><strong>Off the clock</strong></div><small>No session running. Suspiciously virtuous.</small></div>}
