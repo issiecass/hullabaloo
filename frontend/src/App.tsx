@@ -167,6 +167,7 @@ export default function App() {
     setRun(null);
     setSession(null);
     setProfile(null);
+    setTotalXp(undefined);
     setPausedUntil(0);
     setScreen("login");
   }
@@ -187,6 +188,7 @@ export default function App() {
     }
     const next = profileFromUser(user);
     updateProfile(next);
+    setTotalXp(user.xp);
     syncPause(user);
     if (!user.onboarded) setScreen("onboarding");
     else if (interruptPending) showInterrupt(next);
