@@ -8,7 +8,7 @@ import type { SpikeMood } from "./Spike";
 const ITEM = 36;
 
 // One scroll wheel, like a column of the iPhone timer. The value is whichever row sits in the middle.
-function Wheel({ count, value, unit, onChange }: { count: number; value: number; unit: string; onChange: (value: number) => void }) {
+export function Wheel({ count, value, unit, onChange }: { count: number; value: number; unit: string; onChange: (value: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {

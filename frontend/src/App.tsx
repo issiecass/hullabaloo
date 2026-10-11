@@ -249,8 +249,11 @@ export default function App() {
      setScreen("reward");
      // Saved in the background; the lifetime total appears on the receipt when the backend answers.
      completeActivity(activity, filters, actualMinutes)
-       .then(result => setReceipt(current => current && current.activity === activity ? { ...current, totalXp: result.xp_total } : current))
-       .catch(err => console.error("completeActivity failed:", err));
+      .then(result => {
+        setReceipt(current => current && current.activity === activity ? { ...current, totalXp: result.xp_total } : current);
+        setTotalXp(result.xp_total);
+      })
+      .catch(err => console.error("completeActivity failed:", err));
    }
   function finishOnboarding(next: Profile | null) {
     if (next) {
