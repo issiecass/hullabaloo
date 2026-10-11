@@ -54,6 +54,8 @@ export default function App() {
   const [screen, setScreen] = useState<ScreenName>(profile ? (interruptPending ? "interrupt" : "home") : "login");
   const [interruptChirp, setInterruptChirp] = useState(() => pickInterruptChirp(profile, todos));
   const [chosen, setChosen] = useState<Activity>();
+    // The user's total XP from the database, after the activity they just finished. Unset while it loads.
+  const [totalXp, setTotalXp] = useState<number>();
   // Chirps stay quiet until this timestamp (set from Settings or the interrupt page).
   const [pausedUntil, setPausedUntil] = useState(0);
   const paused = Date.now() < pausedUntil;
@@ -252,15 +254,19 @@ export default function App() {
         api("/checkins", { method: "POST", body: JSON.stringify({ app: "instagram", action: "went_outside" }) }).catch(() => {});
         leaveInterrupt("activities");
       }}
-      onSnooze={snoozeFor}
+      onSnooze={minutes => startSession(minutes * 60)}
       onDismiss={() => leaveInterrupt("home")}/>,
     activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} 
     onStart={(activity, filters) => {
       setChosen(activity);
-      completeActivity(activity, filters).catch(err => console.error("completeActivity failed:", err));
+            // Saving the activity also updates the user's XP in the database and returns the new total.
+      setTotalXp(undefined);
+      completeActivity(activity, filters)
+        .then(result => setTotalXp(result?.xp ?? undefined))
+        .catch(err => console.error("completeActivity failed:", err));
       setScreen('reward');
     }}/>,
-    reward: <Reward activity={chosen} tasksDone={todos.filter(t => t.done).length} onDone={() => setScreen("home")}/>,
+        reward: <Reward activity={chosen} tasksDone={todos.filter(t => t.done).length} totalXp={totalXp} onDone={() => setScreen("home")}/>,
   };
 
   return <div className="app-shell single"><Phone>{screens[screen]}</Phone></div>;
