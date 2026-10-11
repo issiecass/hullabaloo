@@ -252,7 +252,7 @@ export default function App() {
         api("/checkins", { method: "POST", body: JSON.stringify({ app: "instagram", action: "went_outside" }) }).catch(() => {});
         leaveInterrupt("activities");
       }}
-      onSnooze={snoozeFor}
+      onSnooze={minutes => startSession(minutes * 60)}
       onDismiss={() => leaveInterrupt("home")}/>,
     activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} 
     onStart={(activity, filters) => {
