@@ -18,6 +18,7 @@ export type ApiUser = {
   onboarded: boolean;
   chirps_paused_until: string | null;
   shortcut_key?: string;
+  xp: number;
 };
 
 // localStorage can throw (private windows, blocked storage), so every access is guarded.

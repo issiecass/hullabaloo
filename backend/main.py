@@ -16,7 +16,7 @@ from typing import Literal
 from fastapi.responses import PlainTextResponse
 
 # Only finishing onboarding writes answers, so an empty answers means the user hasn't onboarded yet.
-USER_COLUMNS = "id, name, email, spice_level, interests, filters, answers, answers <> '{}'::jsonb AS onboarded, chirps_paused_until, created_at, shortcut_key"
+USER_COLUMNS = "id, name, email, spice_level, interests, filters, answers, answers <> '{}'::jsonb AS onboarded, chirps_paused_until, created_at, shortcut_key, xp"
 
 TZ = ZoneInfo("America/New_York")
 
