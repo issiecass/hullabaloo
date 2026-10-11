@@ -57,26 +57,26 @@ export default function Settings({ ai = false, todos = [], name = "Jordan", emai
   return <main className="screen tab-screen">
     <TopBar title="Settings"/>
     <div className="tab-scroll">
-      <div className="settings-chat"><ChatBubble mood={paused ? "asleep" : moods[spice - 1]} compact>{paused ? snoozeComment ?? "Chirps are paused. I’m resting my spines." : "Tell me how hard to go on you."}</ChatBubble></div>
+      <div className="settings-chat"><ChatBubble mood={paused ? "asleep" : moods[spice - 1]} compact>{paused ? snoozeComment ?? "Pokes are paused. I’m resting my spines." : "Tell me how prickly to be."}</ChatBubble></div>
       {editingSpice
         ? <SpiceCard spice={spice} onChange={level => { onSpiceChange?.(level); setEditingSpice(false); }}/>
         : <div className="spice-card spice-summary">
-            <div className="spice-summary-top"><span className="spice-eyebrow">BURN SPICE LEVEL</span><Peppers level={spice}/></div>
+            <div className="spice-summary-top"><span className="spice-eyebrow">SPIKE'S SHARPNESS</span><Peppers level={spice}/></div>
             <div className="spice-summary-main">
               <div><strong>{spiceLevels[spice - 1].name}</strong><small>{spiceLevels[spice - 1].blurb}</small></div>
               <button type="button" className="edit-btn" onClick={() => setEditingSpice(true)}>Edit</button>
             </div>
           </div>}
       <div className="settings-group">
-        <span className="settings-label">Chirps</span>
+        <span className="settings-label">Pokes</span>
         {paused
-          ? <Button onClick={resume}>Resume chirps</Button>
+          ? <Button onClick={resume}>Resume pokes</Button>
           : <>
               <div className="dropdown">
                 <button type="button" className={`btn btn-secondary dropdown-toggle ${snoozeOpen ? "open" : ""}`} aria-haspopup="listbox" aria-expanded={snoozeOpen} onClick={() => setSnoozeOpen(!snoozeOpen)}><span>Snooze for…</span><Icon name="chevron" size={18}/></button>
                 {snoozeOpen && <div className="dropdown-menu" role="listbox" aria-label="Snooze length">{snoozeOptions.map((option, i) => <button type="button" role="option" aria-selected={false} className="dropdown-option" key={option.minutes} onClick={() => snooze(i)}>{option.label}</button>)}</div>}
               </div>
-              <Button variant="secondary" onClick={stopToday}>Stop chirping today</Button>
+              <Button variant="secondary" onClick={stopToday}>Pause pokes today</Button>
             </>}
       </div>
       {shortcutUrl && <div className="settings-group">
