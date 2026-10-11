@@ -38,7 +38,13 @@ def complete_activity(a: CompletedActivity, user_id: int = Depends(auth.current_
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (user_id, a.tag, a.title, a.minutes, a.step, a.free, a.nearby),
         )
-    return {"ok": True}
+        # XP is one point per minute. Recount it from the whole history so the column always matches it.
+        row = conn.execute(
+            "UPDATE users SET xp = (SELECT coalesce(sum(minutes), 0) FROM completed_activities WHERE user_id = %s) "
+            "WHERE id = %s RETURNING xp",
+            (user_id, user_id),
+        ).fetchone()
+    return {"ok": True, "xp": row["xp"] if row else None}
 
 @app.get("/receipt")
 def receipt(user_id: int = Depends(auth.current_user_id)):
