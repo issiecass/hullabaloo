@@ -19,9 +19,7 @@ export default function Reward({ activity, actualMinutes, totalXp, tasksDone = 2
       <div className="receipt-brand">TOUCH GRASS</div><div className="receipt-sub">DOPAMINE RECEIPT</div>
       <div className="dash"/>
       <div className="receipt-row tall"><span>ACTIVITY</span><strong>{activity ? activity.title.toUpperCase() : <>MADE A REAL<br/>PASTA DINNER</>}</strong></div>
-      <div className="receipt-row"><span>LISTED TIME</span><strong>{formatMinutes(listed).toUpperCase()}</strong></div>
       <div className="receipt-row"><span>TIME RECLAIMED</span><strong>{formatMinutes(actual).toUpperCase()}</strong></div>
-      <div className="receipt-row"><span>VS. PLAN</span><strong>{verdict.toUpperCase()}</strong></div>
       <div className="receipt-row"><span>TASKS DONE</span><strong>{tasksDone}</strong></div>
       <div className="dash"/>
       <div className="receipt-total"><span>REAL-LIFE XP</span><strong>+{actual}</strong></div>
