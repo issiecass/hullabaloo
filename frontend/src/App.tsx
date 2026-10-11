@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api, ApiError, API_URL, clearToken, createTodo, deleteTodo, fetchTodos, getToken, savePreferences, setToken, updateTodo, type ApiUser } from "./api";
 import { chirpBasis, fallbackInterruptChirp } from "./chirps";
 import Phone from "./components/Phone";
 import type { Tab } from "./components/TabBar";
@@ -15,7 +14,7 @@ import Reward from "./screens/Reward";
 import Settings from "./screens/Settings";
 import Todos from "./screens/Todos";
 import { fallbackSendOff } from "./session";
-import { clearAll, clearNextChirp, loadNextChirp, loadProfile, saveNextChirp, saveProfile, type Profile } from "./storage";
+import { clearAll, clearNextChirp, clearSession, loadNextChirp, loadProfile, loadSession, saveNextChirp, saveProfile, saveSession, type Profile, type ScrollSession } from "./storage";
 import { api, ApiError, API_URL, clearToken, completeActivity, createTodo, deleteTodo, fetchTodos, getToken, savePreferences, setToken, updateTodo, type ApiUser } from "./api";
 
 type ScreenName = "login" | "onboarding" | Tab | "interrupt" | "activities" | "reward";

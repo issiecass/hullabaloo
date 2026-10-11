@@ -1,4 +1,3 @@
-import type { Answers, FilterId, Todo } from "./data";
 import type { Picks } from "./onboarding";
 import type { Activity, Answers, FilterId, Todo } from "./data";
 
