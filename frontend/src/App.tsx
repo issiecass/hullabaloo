@@ -109,6 +109,7 @@ export default function App() {
         return next;
       });
       if (!user.onboarded) setScreen(current => current === "login" ? current : "onboarding");
+      setTotalXp(user.xp);
       syncPause(user);
     }).catch(error => {
       // An expired or unknown login goes back to the login screen. If the backend is only unreachable, carry on with the saved data.
@@ -264,7 +265,7 @@ export default function App() {
     login: <Login onAuthed={handleAuthed}/>,
     onboarding: <Onboarding ai initial={profile ?? undefined} onDone={prefs => finishOnboarding(profile ? { ...profile, ...prefs } : null)}
       onExit={profile?.spice !== undefined ? () => setScreen("settings") : undefined}/>,
-    home: <Home name={profile?.name} todos={todos} session={session} onToggleTodo={toggleTodo} onStartSession={startSession} onEndSession={endSession} onNavigate={setScreen}/>,
+    home: <Home name={profile?.name} todos={todos} session={session} totalXp={totalXp} onToggleTodo={toggleTodo} onStartSession={startSession} onEndSession={endSession} onNavigate={setScreen}/>,
     todos: <Todos todos={todos} onAdd={addTodo} onToggle={toggleTodo} onDelete={removeTodo} onNavigate={setScreen}/>,
     settings: <Settings ai todos={todos} name={profile?.name} email={profile?.email} spice={profile?.spice} paused={paused}
       shortcutUrl={profile?.shortcutKey ? `${API_URL}/should-interrupt?key=${profile.shortcutKey}` : undefined}
