@@ -11,9 +11,11 @@ const ITEM = 36;
 function Wheel({ count, value, unit, onChange }: { count: number; value: number; unit: string; onChange: (value: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (ref.current) ref.current.scrollTop = value * ITEM;
-  }, []);
+    useEffect(() => {
+      // When the value is set from outside (a preset button), roll the wheel to it.
+      const el = ref.current;
+      if (el && Math.round(el.scrollTop / ITEM) !== value) el.scrollTo({ top: value * ITEM, behavior: "smooth" });
+    }, [value]);
 
   function handleScroll() {
     if (!ref.current) return;

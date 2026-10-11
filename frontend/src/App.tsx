@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { chirpBasis, fallbackInterruptChirp } from "./chirps";
 import Phone from "./components/Phone";
 import type { Tab } from "./components/TabBar";
-import type { Activity, Todo } from "./data";
+import type { Activity, FilterId, Todo } from "./data";
 import Gallery from "./Gallery";
 import { generateInterruptChirp, generateSendOff } from "./llm";
 import Activities from "./screens/Activities";
@@ -14,10 +14,11 @@ import Reward from "./screens/Reward";
 import Settings from "./screens/Settings";
 import Todos from "./screens/Todos";
 import { fallbackSendOff } from "./session";
-import { clearAll, clearNextChirp, clearSession, loadNextChirp, loadProfile, loadSession, saveNextChirp, saveProfile, saveSession, type Profile, type ScrollSession } from "./storage";
+import CheckIn from "./screens/CheckIn";
+import { clearRun, loadRun, saveRun, clearAll, clearNextChirp, clearSession, loadNextChirp, loadProfile, loadSession, saveNextChirp, saveProfile, saveSession, type Profile, type ScrollSession, type ActivityRun } from "./storage";
 import { api, ApiError, API_URL, clearToken, completeActivity, createTodo, deleteTodo, fetchTodos, getToken, savePreferences, setToken, updateTodo, type ApiUser } from "./api";
 
-type ScreenName = "login" | "onboarding" | Tab | "interrupt" | "activities" | "reward";
+type ScreenName = "login" | "onboarding" | Tab | "interrupt" | "activities" | "checkin" | "reward";
 
 // The chirp for the interrupt page: the one the model prepared earlier if it still fits, otherwise the written one.
 function pickInterruptChirp(profile: Profile | null, todos: Todo[]) {
@@ -51,10 +52,12 @@ export default function App() {
   // or a session's time ran out while the app was closed.
   const [interruptPending, setInterruptPending] = useState(() => window.location.pathname.replace(/\/$/, "") === "/interrupt" || (!!savedSession && savedSession.endsAt <= Date.now()));
   // The interrupt page needs a logged-in user, so a logged-out visitor goes through login first.
-  const [screen, setScreen] = useState<ScreenName>(profile ? (interruptPending ? "interrupt" : "home") : "login");
+  const [run, setRun] = useState<ActivityRun | null>(loadRun);
+  const [screen, setScreen] = useState<ScreenName>(profile ? (interruptPending ? "interrupt" : run ? "checkin" : "home") : "login");
   const [interruptChirp, setInterruptChirp] = useState(() => pickInterruptChirp(profile, todos));
-  const [chosen, setChosen] = useState<Activity>();
-    // The user's total XP from the database, after the activity they just finished. Unset while it loads.
+  // What the receipt shows: the activity, the minutes the user reported, and their XP total once the backend answers.
+  const [receipt, setReceipt] = useState<{ activity: Activity; actualMinutes: number; totalXp: number | null } | null>(null);
+  // The user's total XP from the database, after the activity they just finished. Unset while it loads.
   const [totalXp, setTotalXp] = useState<number>();
   // Chirps stay quiet until this timestamp (set from Settings or the interrupt page).
   const [pausedUntil, setPausedUntil] = useState(0);
@@ -72,7 +75,7 @@ export default function App() {
       clearSession();
       setSession(null);
       setInterruptChirp(pickInterruptChirp(profile, todos));
-      setScreen(current => current === "login" || current === "onboarding" ? current : "interrupt");
+      setScreen(current => current === "login" || current === "onboarding" || current === "checkin" ? current : "interrupt");
     }, Math.max(0, session.endsAt - Date.now()));
     return () => clearTimeout(id);
   }, [session?.endsAt, profile, todos]);
@@ -159,6 +162,8 @@ export default function App() {
     // Only the login is cleared. Preferences are loaded from the backend again at the next login.
     clearToken();
     clearSession();
+    clearRun();
+    setRun(null);
     setSession(null);
     setProfile(null);
     setPausedUntil(0);
@@ -177,6 +182,7 @@ export default function App() {
     if (loadProfile()?.email.toLowerCase() !== user.email.toLowerCase()) {
       clearAll();
       setSession(null);
+      setRun(null);
     }
     const next = profileFromUser(user);
     updateProfile(next);
@@ -222,6 +228,29 @@ export default function App() {
     window.history.replaceState(null, "", "/");
     setScreen(next);
   }
+     function startActivity(activity: Activity, filters: FilterId[]) {
+     const next: ActivityRun = { activity, filters };
+     saveRun(next);
+     setRun(next);
+     setScreen("checkin");
+   }
+   function cancelActivity() {
+     clearRun();
+     setRun(null);
+     setScreen("activities");
+   }
+   function finishActivity(actualMinutes: number) {
+     if (!run) return;
+     const { activity, filters } = run;
+     clearRun();
+     setRun(null);
+     setReceipt({ activity, actualMinutes, totalXp: null });
+     setScreen("reward");
+     // Saved in the background; the lifetime total appears on the receipt when the backend answers.
+     completeActivity(activity, filters, actualMinutes)
+       .then(result => setReceipt(current => current && current.activity === activity ? { ...current, totalXp: result.xp_total } : current))
+       .catch(err => console.error("completeActivity failed:", err));
+   }
   function finishOnboarding(next: Profile | null) {
     if (next) {
       updateProfile(next);
@@ -256,17 +285,9 @@ export default function App() {
       }}
       onSnooze={minutes => startSession(minutes * 60)}
       onDismiss={() => leaveInterrupt("home")}/>,
-    activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} 
-    onStart={(activity, filters) => {
-      setChosen(activity);
-            // Saving the activity also updates the user's XP in the database and returns the new total.
-      setTotalXp(undefined);
-      completeActivity(activity, filters)
-        .then(result => setTotalXp(result?.xp ?? undefined))
-        .catch(err => console.error("completeActivity failed:", err));
-      setScreen('reward');
-    }}/>,
-        reward: <Reward activity={chosen} tasksDone={todos.filter(t => t.done).length} totalXp={totalXp} onDone={() => setScreen("home")}/>,
+    activities: <Activities ai profile={profile} todos={todos} initialFilters={profile?.filters} onStart={startActivity}/>,
+    checkin: run ? <CheckIn key={run.activity.title} activity={run.activity} onFinish={finishActivity} onBack={cancelActivity}/> : null,
+    reward: <Reward activity={receipt?.activity} actualMinutes={receipt?.actualMinutes} totalXp={receipt?.totalXp} tasksDone={todos.filter(t => t.done).length} onDone={() => setScreen("home")}/>,
   };
 
   return <div className="app-shell single"><Phone>{screens[screen]}</Phone></div>;
