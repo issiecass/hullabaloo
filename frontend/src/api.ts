@@ -5,6 +5,8 @@ export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 const TOKEN_KEY = "touchgrass.token";
 
+export type CompletedResult = { ok: boolean; xp_earned: number; xp_total: number };
+
 // The account as the backend returns it from sign-up, log-in and /auth/me.
 export type ApiUser = {
   id: number;
@@ -103,11 +105,11 @@ export function deleteTodo(id: string): Promise<void> {
 // Saves a started activity for the dopamine receipt. The backend only accepts these three tags.
 const TAGS = ["QUICK WIN", "NOVELTY", "SOCIAL"];
 
-export function completeActivity(activity: Activity, filters: FilterId[]) {
+export function completeActivity(activity: Activity, filters: FilterId[], actualMinutes: number): Promise<CompletedResult> {
   const a = activity as any;
   const tag = String(a.tag ?? "").toUpperCase().replace(/[_-]/g, " ").trim();
   const minutes = parseInt(String(a.minutes ?? a.time ?? ""), 10);
-  return api("/activities/complete", {
+  return api<CompletedResult>("/activities/complete", {
     method: "POST",
     body: JSON.stringify({
       tag: TAGS.includes(tag) ? tag : "QUICK WIN",
@@ -116,6 +118,7 @@ export function completeActivity(activity: Activity, filters: FilterId[]) {
       step: String(a.step ?? a.starter_step ?? a.starterStep ?? "Get started"),
       free: filters.includes("free"),
       nearby: filters.includes("nearby"),
+      actual_minutes: Math.max(1, Math.round(actualMinutes)),
     }),
   });
 }

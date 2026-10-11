@@ -29,30 +29,35 @@ class CompletedActivity(BaseModel):
     step: str = Field(min_length=1, max_length=500)
     free: bool
     nearby: bool
+    # How long it really took, as the user reported it. Older clients don't send it, so it falls back to minutes.
+    actual_minutes: int | None = Field(default=None, gt=0, le=1440)
 
 @app.post("/activities/complete", status_code=201)
 def complete_activity(a: CompletedActivity, user_id: int = Depends(auth.current_user_id)):
+    earned = a.actual_minutes or a.minutes   # 1 minute = 1 XP
+    # One transaction: the activity and the XP it earned are saved together or not at all.
     with db.connect() as conn:
         conn.execute(
-            "INSERT INTO completed_activities (user_id, tag, title, minutes, step, free, nearby) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (user_id, a.tag, a.title, a.minutes, a.step, a.free, a.nearby),
+            "INSERT INTO completed_activities (user_id, tag, title, minutes, step, free, nearby, actual_minutes) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (user_id, a.tag, a.title, a.minutes, a.step, a.free, a.nearby, earned),
         )
-        # XP is one point per minute. Recount it from the whole history so the column always matches it.
         row = conn.execute(
-            "UPDATE users SET xp = (SELECT coalesce(sum(minutes), 0) FROM completed_activities WHERE user_id = %s) "
-            "WHERE id = %s RETURNING xp",
-            (user_id, user_id),
+            "UPDATE users SET xp = xp + %s WHERE id = %s RETURNING xp",
+            (earned, user_id),
         ).fetchone()
-    return {"ok": True, "xp": row["xp"] if row else None}
+    if not row:
+        raise HTTPException(404, "User not found")
+    return {"ok": True, "xp_earned": earned, "xp_total": row["xp"]}
 
 @app.get("/receipt")
 def receipt(user_id: int = Depends(auth.current_user_id)):
     with db.connect() as conn:
         row = conn.execute(
-            "SELECT count(*) AS activities, coalesce(sum(minutes), 0) AS minutes "
+            "SELECT count(*) AS activities, coalesce(sum(coalesce(actual_minutes, minutes)), 0) AS minutes, "
+            "(SELECT xp FROM users WHERE id = %s) AS xp "
             "FROM completed_activities WHERE user_id = %s",
-            (user_id,),
+            (user_id, user_id),
         ).fetchone()
     return row
 
